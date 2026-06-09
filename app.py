@@ -4,20 +4,24 @@ import math
 import os
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(override=True)   # force .env values to win over shell env
 
 from flask import Flask, jsonify, render_template, request
 
 from services.ai import (analyze_chart_image, get_analyst_verdict,
-                          get_earnings_summary, get_sentiment_score,
+                          get_company_summary, get_earnings_summary,
+                          get_financial_commentary, get_red_green_flags,
+                          get_risk_commentary, get_sentiment_score,
                           get_trade_narrative)
 from services.chat import chat_about_ticker
 from services.earnings import get_earnings_for_watchlist, get_next_earnings
 from services.indices import get_indices, get_quote_strip
 from services.kalshi import (get_arbitrage_opportunities,
                              get_prediction_markets)
-from services.news import get_news_headlines
+from services.news import extract_titles, get_news_headlines
 from services.portfolio import get_portfolio_narrative, summarize_portfolio
+from services.research import get_research_report
+from services.symbols import get_all_symbols
 from services.sentiment import (calculate_event_probability,
                                  calculate_fundamental_score,
                                  calculate_price_targets)
@@ -97,10 +101,11 @@ def analyze():
         if "error" in stock:
             return ok(stock, 404)
 
-        headlines, news_src = get_news_headlines(ticker)
-        earnings            = get_earnings_summary(ticker, headlines)
+        headlines, news_src = get_news_headlines(ticker)   # rich list[dict]
+        titles              = extract_titles(headlines)     # strings for AI calls
+        earnings            = get_earnings_summary(ticker, titles)
         markets, mkt_src    = get_prediction_markets(ticker, stock["name"])
-        sentiment           = get_sentiment_score(ticker, stock, headlines)
+        sentiment           = get_sentiment_score(ticker, stock, titles)
 
         prob = calculate_event_probability(
             stock, stock.get("options_flow"),
@@ -115,6 +120,7 @@ def analyze():
             "earnings":      earnings,
             "kalshi":        markets,
             "kalshi_source": mkt_src,
+            "news":          headlines,
             "news_source":   news_src,
             "sentiment":     sentiment,
             "probability":   prob,
@@ -147,8 +153,9 @@ def analyze_trade():
         price_history           = get_price_history(ticker, days=40)
         fund_score, fund_detail = calculate_fundamental_score(stock, price_history.get("prices", []))
         headlines, _            = get_news_headlines(ticker)
+        titles                  = extract_titles(headlines)
         markets, _              = get_prediction_markets(ticker, stock["name"])
-        sentiment               = get_sentiment_score(ticker, stock, headlines)
+        sentiment               = get_sentiment_score(ticker, stock, titles)
 
         technical = None
         if image_file and image_file.filename:
@@ -251,6 +258,40 @@ def earnings_single_route(ticker):
     except Exception as exc:
         print(f"/api/earnings/{ticker} error: {exc}")
         return ok({"earnings": None})
+
+
+@app.route("/api/symbols", methods=["GET"])
+def symbols_route():
+    try:
+        return ok({"symbols": get_all_symbols()})
+    except Exception as exc:
+        print(f"/api/symbols error: {exc}")
+        return ok({"symbols": []})
+
+
+@app.route("/api/research/<ticker>", methods=["GET"])
+def research_route(ticker):
+    """Full research report for *ticker*: 6 data sections + 4 AI commentaries."""
+    try:
+        ticker = (ticker or "").upper().strip()
+        if not ticker:
+            return ok({"error": "Ticker symbol is required"}, 400)
+
+        report = get_research_report(ticker)
+
+        # Layer AI commentary on top (each call is independent + safe-defaulted)
+        report["company_summary"]      = get_company_summary(ticker,
+                                            report["company_overview"].get("summary"))
+        report["financial_commentary"] = get_financial_commentary(ticker,
+                                            report["quarterly_financials"])
+        report["risk_commentary"]      = get_risk_commentary(ticker,
+                                            report["risk_metrics"])
+        report["flags"]                = get_red_green_flags(ticker, report)
+
+        return ok(report)
+    except Exception as exc:
+        print(f"/api/research/{ticker} error: {exc}")
+        return ok({"error": str(exc), "message": "Failed to load research report."}, 500)
 
 
 @app.route("/api/portfolio", methods=["POST"])
