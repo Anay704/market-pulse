@@ -111,6 +111,26 @@ def get_stock_data(ticker):
         week52_low  = sanitize_number(info.get("fiftyTwoWeekLow"),  default=None)
         market_cap  = sanitize_number(info.get("marketCap"),        default=None)
 
+        # Extended financial metrics (best-effort — yfinance fields vary by symbol)
+        volume     = sanitize_number(info.get("regularMarketVolume") or info.get("volume"))
+        avg_volume = sanitize_number(info.get("averageDailyVolume10Day") or info.get("averageVolume"))
+        day_high   = sanitize_number(info.get("regularMarketDayHigh") or info.get("dayHigh"))
+        day_low    = sanitize_number(info.get("regularMarketDayLow")  or info.get("dayLow"))
+        beta       = sanitize_number(info.get("beta"))
+        eps        = sanitize_number(info.get("trailingEps") or info.get("epsTrailingTwelveMonths"))
+        forward_pe = sanitize_number(info.get("forwardPE"))
+        # Compute dividend yield from the dollar annual rate ÷ price — unambiguous
+        # across yfinance versions (the dividendYield field has changed semantics).
+        div_rate   = sanitize_number(info.get("trailingAnnualDividendRate")
+                                     or info.get("dividendRate"))
+        div_yield  = (div_rate / price * 100.0) if (div_rate and price) else None
+        # These ARE always fractions in yfinance → simple ×100 conversion.
+        margin     = sanitize_number(info.get("profitMargins"))
+        rev_growth = sanitize_number(info.get("revenueGrowth"))
+        earn_growth = sanitize_number(info.get("earningsGrowth"))
+        ma_50      = sanitize_number(info.get("fiftyDayAverage"))
+        ma_200     = sanitize_number(info.get("twoHundredDayAverage"))
+
         return {
             "ticker":       ticker,
             "name":         info.get("longName") or info.get("shortName") or ticker,
@@ -124,6 +144,24 @@ def get_stock_data(ticker):
             "week_52_high": round(week52_high, 2) if week52_high is not None else None,
             "week_52_low":  round(week52_low, 2)  if week52_low  is not None else None,
             "options_flow": None if is_crypto else _get_options_flow(stock),
+
+            # Extended fields (any may be None for crypto / unavailable tickers)
+            "volume":        int(volume)     if volume     is not None else None,
+            "avg_volume":    int(avg_volume) if avg_volume is not None else None,
+            "day_high":      round(day_high, 2) if day_high is not None else None,
+            "day_low":       round(day_low, 2)  if day_low  is not None else None,
+            "beta":          round(beta, 2)     if beta     is not None else None,
+            "eps":           round(eps, 2)      if eps      is not None else None,
+            "forward_pe":    round(forward_pe, 2) if forward_pe is not None else None,
+            "dividend_yield": round(div_yield, 2)        if div_yield   is not None else None,
+            "profit_margin":  round(margin * 100, 2)     if margin      is not None else None,
+            "revenue_growth": round(rev_growth * 100, 2) if rev_growth  is not None else None,
+            "earnings_growth": round(earn_growth * 100, 2) if earn_growth is not None else None,
+            "ma_50":         round(ma_50, 2)    if ma_50    is not None else None,
+            "ma_200":        round(ma_200, 2)   if ma_200   is not None else None,
+            "sector":        info.get("sector")   or None,
+            "industry":      info.get("industry") or None,
+            "exchange":      info.get("exchange") or None,
         }
     except Exception as exc:
         print(f"Stock data error: {exc}")
