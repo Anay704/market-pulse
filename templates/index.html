@@ -2217,7 +2217,9 @@ function renderProbPanel(pd) {
   if (pt) {
     document.getElementById('d-bull-target').textContent = '$' + pt.bull.toFixed(2);
     document.getElementById('d-bear-target').textContent = '$' + pt.bear.toFixed(2);
-    document.getElementById('d-implied-move').textContent = 'Implied move: ±$' + pt.implied_move.toFixed(2);
+    document.getElementById('d-implied-move').textContent =
+      'Typical swing: ±$' + pt.implied_move.toFixed(2)
+      + (pt.move_pct != null ? ` (±${pt.move_pct}%)` : '');
   }
 }
 function renderGaugeChart(score, color) {

@@ -100,6 +100,7 @@ def analyze():
         stock = get_stock_data(ticker)
         if "error" in stock:
             return ok(stock, 404)
+        chart = get_price_history(ticker)
 
         headlines, news_src = get_news_headlines(ticker)   # rich list[dict]
         titles              = extract_titles(headlines)     # strings for AI calls
@@ -112,11 +113,11 @@ def analyze():
             sentiment.get("sentiment_score", 0.0),
             markets[0]["yes_pct"] / 100.0 if markets else 0.5,
         )
-        prob["price_targets"] = calculate_price_targets(stock)
+        prob["price_targets"] = calculate_price_targets(stock, chart.get("prices"))
 
         return ok({
             "stock":         stock,
-            "chart":         get_price_history(ticker),
+            "chart":         chart,
             "earnings":      earnings,
             "kalshi":        markets,
             "kalshi_source": mkt_src,

@@ -59,17 +59,57 @@ def calculate_event_probability(stock_data, options_flow,
 
 # ── Price targets ──────────────────────────────────────────────────────────────
 
-def calculate_price_targets(stock_data):
-    """Approximate 30-day bull/bear targets via implied-move proxy (3% floor)."""
-    price        = _num(stock_data.get("price"), 0.0)
-    change_pct   = _num(stock_data.get("change_pct"), 0.0)
-    implied_move = abs(change_pct) * math.sqrt(30) * price / 100.0
-    if implied_move < price * 0.005:
-        implied_move = price * 0.03
+# A 30-day window is ~21 trading days; daily vol scales by its square root.
+_TRADING_DAYS_PER_MONTH = 21
+# Sanity rails on the monthly move, as a fraction of price. The floor keeps
+# mega-caps from showing a nonsense ±0% band; the ceiling stops a single gap day
+# from projecting a ±40% range.
+_MIN_MONTHLY_MOVE = 0.04
+_MAX_MONTHLY_MOVE = 0.25
+
+
+def calculate_price_targets(stock_data, prices=None):
+    """Approximate 30-day bull/bear targets from realized volatility.
+
+    *prices* is a list of recent closes (from get_price_history). When enough
+    history is available the move is derived from the stock's actual daily
+    volatility; otherwise it falls back to a conservative flat estimate.
+
+    Using a single day's move as the volatility input — as an earlier version
+    did — projects an earnings gap across the whole month: AAPL's -7.35% day
+    became a ±40% monthly band. Realized vol over the full window absorbs that.
+    """
+    price = _num(stock_data.get("price"), 0.0)
+    if price <= 0:
+        return {"bull": 0.0, "bear": 0.0, "implied_move": 0.0}
+
+    closes = [c for c in (prices or []) if isinstance(c, (int, float)) and c > 0]
+
+    daily_vol = None
+    if len(closes) >= 10:
+        returns = [
+            (closes[i] - closes[i - 1]) / closes[i - 1]
+            for i in range(1, len(closes))
+            if closes[i - 1] > 0
+        ]
+        if len(returns) >= 5:
+            mean_return = sum(returns) / len(returns)
+            variance    = sum((r - mean_return) ** 2 for r in returns) / (len(returns) - 1)
+            daily_vol   = math.sqrt(variance)
+
+    if daily_vol is None or daily_vol <= 0:
+        # No usable history — assume a mid-range ~1.5% daily move.
+        daily_vol = 0.015
+
+    monthly_move = daily_vol * math.sqrt(_TRADING_DAYS_PER_MONTH)
+    monthly_move = max(_MIN_MONTHLY_MOVE, min(_MAX_MONTHLY_MOVE, monthly_move))
+    implied_move = price * monthly_move
+
     return {
         "bull":         round(price + implied_move, 2),
         "bear":         round(max(0.0, price - implied_move), 2),
         "implied_move": round(implied_move, 2),
+        "move_pct":     round(monthly_move * 100, 1),
     }
 
 
