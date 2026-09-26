@@ -681,6 +681,81 @@
       .bl-headline { font-size: 20px; }
     }
 
+    /* ── "What if you'd invested?" card ───────────────────────────────────── */
+    .whatif {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .whatif.visible { display: block; }
+    .whatif .card-hdr { flex-wrap: wrap; gap: 10px; }
+    .wi-periods { display: flex; gap: 4px; flex-wrap: wrap; }
+    .wi-period {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      font-size: 11px; font-weight: 600;
+      padding: 4px 10px; border-radius: 100px;
+      cursor: pointer; transition: all .15s;
+    }
+    .wi-period:hover:not(:disabled) { border-color: var(--accent); color: var(--text); }
+    .wi-period.on { border-color: var(--accent-dark); background: var(--accent-soft); color: var(--accent); }
+    .wi-period:disabled { opacity: .35; cursor: not-allowed; }
+    .wi-body {
+      display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+      gap: 28px; padding: 22px 24px 16px;
+    }
+    .wi-question { font-size: 15px; line-height: 1.7; color: var(--text-2); }
+    .wi-question strong { color: var(--text); font-weight: 600; }
+    .wi-amount {
+      display: inline-flex; align-items: baseline;
+      border-bottom: 1px dashed var(--accent-dark);
+      color: var(--text); font-weight: 600;
+      cursor: text;
+    }
+    .wi-amount:focus-within { border-bottom: 1px solid var(--accent); }
+    .wi-amount input {
+      background: transparent; border: none; outline: none;
+      color: var(--text); font: inherit; font-weight: 600;
+      width: 6ch; padding: 0 0 0 1px;
+    }
+    .wi-final {
+      font-size: 40px; font-weight: 700; line-height: 1.1;
+      letter-spacing: -1.2px; color: var(--text);
+      margin-top: 6px; font-variant-numeric: tabular-nums;
+    }
+    .wi-change { font-size: 13.5px; font-weight: 600; margin-top: 6px; }
+    .wi-change .wi-yearly { color: var(--text-3); font-weight: 500; }
+    .wi-stats { margin-top: 18px; border-top: 1px solid var(--border); }
+    .wi-stat {
+      display: grid; grid-template-columns: 1fr auto; gap: 3px 12px;
+      align-items: baseline;
+      padding: 12px 0; border-bottom: 1px solid var(--border);
+    }
+    .wi-stat:last-child { border-bottom: none; padding-bottom: 0; }
+    .wi-stat-lbl {
+      font-size: 10px; font-weight: 700; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .wi-stat-val { font-size: 15px; font-weight: 700; color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+    .wi-stat-note { grid-column: 1 / -1; font-size: 12.5px; line-height: 1.55; color: var(--text-2); }
+    .wi-chart-col { display: flex; flex-direction: column; min-width: 0; }
+    .wi-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11px; color: var(--text-2); margin-bottom: 10px; }
+    .wi-key { display: inline-flex; align-items: center; gap: 6px; }
+    .wi-swatch { width: 16px; border-top: 2px solid; }
+    .wi-swatch.dashed { border-top-style: dashed; }
+    .wi-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--negative); }
+    .wi-chart { position: relative; flex: 1; min-height: 240px; }
+    .wi-foot { padding: 0 24px 16px; font-size: 11px; line-height: 1.6; color: var(--text-3); }
+    @media (max-width: 800px) {
+      .wi-body { grid-template-columns: 1fr; gap: 20px; padding: 18px; }
+      .wi-final { font-size: 32px; }
+      .wi-chart { min-height: 200px; }
+      .wi-foot { padding: 0 18px 14px; }
+    }
+
     .earnings-body { font-size: 13px; line-height: 1.9; color: var(--text-2); white-space: pre-wrap; }
     .section-num { color: var(--accent); font-weight: 700; }
 
@@ -1576,6 +1651,51 @@
         </div>
       </div>
 
+      <div class="whatif fade-in" id="whatif">
+        <div class="card-hdr">
+          <div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label">What if you’d invested?</span></div>
+          <div class="wi-periods" id="wi-periods" role="group" aria-label="How long ago"></div>
+        </div>
+        <div class="wi-body">
+          <div>
+            <div class="wi-question">
+              If you’d put <label class="wi-amount">$<input id="wi-amount" type="text" inputmode="numeric"
+                autocomplete="off" value="1,000" aria-label="Amount invested"></label>
+              into <strong id="wi-name"></strong> <span id="wi-when"></span>, you’d have
+            </div>
+            <div class="wi-final" id="wi-final">—</div>
+            <div class="wi-change" id="wi-change"></div>
+            <div class="wi-stats">
+              <div class="wi-stat">
+                <div class="wi-stat-lbl">Lowest it got</div>
+                <div class="wi-stat-val" id="wi-low">—</div>
+                <div class="wi-stat-note" id="wi-low-note"></div>
+              </div>
+              <div class="wi-stat">
+                <div class="wi-stat-lbl" data-term="max-drop" data-jargon="Max Drawdown"></div>
+                <div class="wi-stat-val" id="wi-drop">—</div>
+                <div class="wi-stat-note" id="wi-drop-note"></div>
+              </div>
+              <div class="wi-stat" id="wi-bench-row">
+                <div class="wi-stat-lbl" data-term="benchmark" data-jargon="Same Amount in S&amp;P 500"></div>
+                <div class="wi-stat-val" id="wi-bench">—</div>
+                <div class="wi-stat-note" id="wi-bench-note"></div>
+              </div>
+            </div>
+          </div>
+          <div class="wi-chart-col">
+            <div class="wi-legend">
+              <span class="wi-key"><span class="wi-swatch" style="border-color:var(--accent)"></span><span id="wi-key-name"></span></span>
+              <span class="wi-key" id="wi-key-bench"><span class="wi-swatch dashed" style="border-color:var(--text-2)"></span>S&amp;P 500</span>
+              <span class="wi-key"><span class="wi-swatch dashed" style="border-color:var(--text-3)"></span>What you put in</span>
+              <span class="wi-key"><span class="wi-dot"></span>Lowest point</span>
+            </div>
+            <div class="wi-chart"><canvas id="whatifChart"></canvas></div>
+          </div>
+        </div>
+        <div class="wi-foot" id="wi-foot"></div>
+      </div>
+
       <div class="panels">
         <div class="card">
           <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-stock"></div><span class="card-label">Stock Data</span></div></div>
@@ -2128,6 +2248,14 @@ const GLOSSARY = {
     plain: 'Real-Money Betting Odds',
     desc:  'Odds from Kalshi, where people bet real money on business outcomes. The percentage is the crowd’s estimate that the outcome happens.',
   },
+  'max-drop': {
+    plain: 'Biggest Drop',
+    desc:  'The largest fall from a high point to a later low point. It shows how much of your gains you would have had to watch disappear before things got better.',
+  },
+  'benchmark': {
+    plain: 'Same Money in the Whole Market',
+    desc:  'The S&P 500 bundles 500 of the biggest US companies into one investment. Comparing against it shows whether picking this one company beat simply owning a slice of everything.',
+  },
 };
 
 let beginnerMode = localStorage.getItem(LS_BEGINNER) === '1';
@@ -2412,11 +2540,15 @@ async function runSingle(ticker, { push = true } = {}) {
   document.getElementById('d-price').textContent = '—';
   document.getElementById('d-change').textContent = '';
   showSkeletons();
+  hideWhatIf();
   updateStarButton(ticker);
 
   setLoading(true);
   const animId = startLoadingAnim(MAIN_STEPS);
   if (push) history.pushState({ ticker }, '', `?q=${ticker}`);
+  // Runs alongside the (much slower) analysis; rendered once that lands so the
+  // card can use the company name.
+  const whatIfReq = fetchWhatIf(ticker, currentController.signal);
   try {
     const data = await fetchTicker(ticker, currentController.signal);
     if (data.error) throw new Error(data.message || data.error);
@@ -2427,6 +2559,7 @@ async function runSingle(ticker, { push = true } = {}) {
     requestAnimationFrame(() => requestAnimationFrame(() => dash.classList.add('loaded')));
     dash.scrollIntoView({ behavior:'smooth', block:'start' });
     loadEarningsBanner(ticker);
+    whatIfReq.then(w => { if (lastAnalyzedTicker === ticker) renderWhatIf(w, data.stock.name); });
   } catch (err) {
     if (err.name === 'AbortError') return;
     showError(err.message); dash.classList.remove('visible'); lastAnalyzedTicker = null;
@@ -2566,6 +2699,181 @@ function renderBottomLine(plain) {
   document.getElementById('bl-risk-note').textContent = RISK_NOTE[risk];
 
   card.classList.add('visible');
+}
+
+// ══════════════════════ WHAT IF YOU'D INVESTED ══════════════════════
+// /api/whatif returns growth of $1 per period, so changing the amount or the
+// period re-renders locally without another request.
+const WI_PERIODS = [['1y', 1], ['3y', 3], ['5y', 5], ['10y', 10], ['all', null]];
+const USD0 = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', maximumFractionDigits:0 });
+const USD2 = new Intl.NumberFormat('en-US', { style:'currency', currency:'USD', minimumFractionDigits:2, maximumFractionDigits:2 });
+const wi = { data:null, name:'', period:null, pickedPeriod:null, amount:1000 };
+let whatifChart = null;
+
+function fmtUSD(v) { return (Math.abs(v) < 100 ? USD2 : USD0).format(v); }
+function fmtUSDSigned(v) { return (v < 0 ? '−' : '+') + fmtUSD(Math.abs(v)); }
+function fmtUSDShort(v) {
+  const a = Math.abs(v);
+  if (a >= 1e6) return '$' + (v / 1e6).toFixed(1) + 'M';
+  if (a >= 1e4) return '$' + Math.round(v / 1e3) + 'k';
+  if (a >= 1e3) return '$' + (v / 1e3).toFixed(1) + 'k';
+  return '$' + Math.round(v);
+}
+function fmtPctSigned(p) {
+  const v = Math.round(p * 100);
+  return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toLocaleString('en-US') + '%';
+}
+function isoDate(iso) { return new Date(iso + 'T00:00:00'); }
+function fmtMonth(iso) { return isoDate(iso).toLocaleDateString('en-US', { month:'short', year:'numeric' }); }
+function fmtDay(iso)   { return isoDate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' }); }
+
+async function fetchWhatIf(ticker, signal) {
+  try {
+    const res = await fetch('/api/whatif/' + encodeURIComponent(ticker), { signal });
+    return res.ok ? await res.json() : null;
+  } catch (_) { return null; }
+}
+
+function hideWhatIf() {
+  document.getElementById('whatif').classList.remove('visible');
+  if (whatifChart) { whatifChart.destroy(); whatifChart = null; }
+  wi.data = null;
+}
+
+function renderWhatIf(data, name) {
+  if (!data || !data.default_period) { hideWhatIf(); return; }
+  wi.data = data;
+  wi.name = name || data.ticker;
+  const picked = wi.pickedPeriod && data.periods[wi.pickedPeriod];
+  wi.period = picked && picked.available ? wi.pickedPeriod : data.default_period;
+
+  const since = data.first_date ? fmtMonth(data.first_date) : '';
+  document.getElementById('wi-periods').innerHTML = WI_PERIODS
+    .filter(([key]) => data.periods[key])
+    .map(([key, years]) => {
+      const ok = data.periods[key].available;
+      const label = years ? years + 'Y' : 'Since ' + since;
+      const tip = ok ? '' : ` disabled title="${escHtml(data.ticker)} has only traded since ${escHtml(since)}"`;
+      return `<button type="button" class="wi-period${key === wi.period ? ' on' : ''}" data-period="${key}"${tip}>${label}</button>`;
+    }).join('');
+
+  document.getElementById('wi-name').textContent = wi.name;
+  document.getElementById('wi-key-name').textContent = data.ticker;
+  document.getElementById('whatif').classList.add('visible');
+  drawWhatIf(true);
+}
+
+function drawWhatIf(animate) {
+  const data = wi.data;
+  if (!data) return;
+  const p = data.periods[wi.period], amt = wi.amount;
+  const years = (WI_PERIODS.find(([k]) => k === wi.period) || [])[1];
+
+  document.getElementById('wi-when').textContent =
+    years ? `${years} year${years > 1 ? 's' : ''} ago` : `when it started trading in ${fmtMonth(p.start_date)}`;
+
+  const final = amt * p.growth;
+  document.getElementById('wi-final').textContent = fmtUSD(final);
+  const changeEl = document.getElementById('wi-change');
+  const yearly = p.years >= 2.5
+    ? ` <span class="wi-yearly">· about ${fmtPctSigned(p.annualized).replace('+', '')} a year</span>` : '';
+  changeEl.innerHTML = `${fmtUSDSigned(final - amt)} (${fmtPctSigned(p.growth - 1)})${yearly}`;
+  changeEl.style.color = final >= amt ? 'var(--positive)' : 'var(--negative)';
+
+  // Lowest point — measured against what was put in, which is what a beginner feels.
+  const low = amt * p.low.growth;
+  document.getElementById('wi-low').textContent = fmtUSD(low);
+  document.getElementById('wi-low-note').textContent = p.low.growth < 0.9995
+    ? `Down ${fmtUSD(amt - low)} from what you put in, in ${fmtMonth(p.low.date)}.`
+    : 'It never fell below what you put in.';
+
+  // Biggest peak-to-trough fall, in dollars the reader can picture.
+  const d = p.max_drop, dropEl = document.getElementById('wi-drop');
+  if (d) {
+    dropEl.textContent = fmtPctSigned(d.pct);
+    dropEl.style.color = 'var(--negative)';
+    document.getElementById('wi-drop-note').textContent =
+      `Fell from ${fmtUSD(amt * d.peak)} to ${fmtUSD(amt * d.trough)} between ${fmtMonth(d.peak_date)} and ${fmtMonth(d.trough_date)}. `
+      + (d.recovered_date ? `Back above that high by ${fmtMonth(d.recovered_date)}.` : 'It hasn’t climbed back to that high yet.');
+  } else {
+    dropEl.textContent = 'None';
+    dropEl.style.color = '';
+    document.getElementById('wi-drop-note').textContent = 'It only went up over this period.';
+  }
+
+  const b = p.benchmark;
+  document.getElementById('wi-bench-row').style.display = b ? '' : 'none';
+  document.getElementById('wi-key-bench').style.display = b ? '' : 'none';
+  if (b) {
+    const benchFinal = amt * b.growth, gap = final - benchFinal;
+    document.getElementById('wi-bench').textContent = fmtUSD(benchFinal);
+    const drop = b.max_drop_pct < 0 ? fmtPctSigned(b.max_drop_pct) : null;
+    let note;
+    if (Math.abs(gap) < Math.max(1, amt * 0.005)) {
+      note = 'About the same result.' + (drop ? ` The S&P 500’s biggest drop over the same time was ${drop}.` : '');
+    } else if (gap > 0) {
+      note = `${data.ticker} came out ${fmtUSD(gap)} ahead.` + (drop ? ` The S&P 500’s biggest drop over the same time was ${drop}.` : '');
+    } else {
+      note = `The S&P 500 came out ${fmtUSD(-gap)} ahead` + (drop ? `, with a biggest drop of ${drop} over the same time.` : '.');
+    }
+    document.getElementById('wi-bench-note').textContent = note;
+  }
+
+  document.getElementById('wi-foot').textContent =
+    `Based on closing prices from ${fmtDay(p.start_date)} to ${fmtDay(p.end_date)}, with dividends reinvested. `
+    + 'Ignores taxes and fees. Past results don’t predict future ones.';
+
+  drawWhatIfChart(p, amt, animate);
+}
+
+function drawWhatIfChart(p, amt, animate) {
+  if (whatifChart) { whatifChart.destroy(); whatifChart = null; }
+  const s = p.series;
+  const ctx = document.getElementById('whatifChart').getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 240);
+  grad.addColorStop(0, 'rgba(93,191,168,0.18)');
+  grad.addColorStop(1, 'rgba(10,14,20,0)');
+  const lowDot = s.values.map((_, i) => i === s.low_index ? 4 : 0);
+
+  const datasets = [{
+    label: wi.data.ticker, data: s.values.map(v => v * amt),
+    borderColor: '#5dbfa8', backgroundColor: grad, borderWidth: 2, fill: true, tension: 0.2,
+    pointRadius: lowDot, pointHoverRadius: 4,
+    pointBackgroundColor: s.values.map((_, i) => i === s.low_index ? '#f47174' : '#5dbfa8'),
+    pointBorderColor:     s.values.map((_, i) => i === s.low_index ? '#f47174' : '#5dbfa8'),
+  }];
+  if (s.bench) datasets.push({
+    label: 'S&P 500', data: s.bench.map(v => v * amt),
+    borderColor: '#8b95a3', borderDash: [5, 4], borderWidth: 1.5, fill: false, tension: 0.2,
+    pointRadius: 0, pointHoverRadius: 3, pointBackgroundColor: '#8b95a3',
+  });
+  datasets.push({
+    label: 'What you put in', data: s.values.map(() => amt),
+    borderColor: '#5d6571', borderDash: [2, 3], borderWidth: 1, fill: false,
+    pointRadius: 0, pointHoverRadius: 0,
+  });
+  const putInIndex = datasets.length - 1;
+  const tick = iso => p.years > 5.5
+    ? String(isoDate(iso).getFullYear())
+    : isoDate(iso).toLocaleDateString('en-US', { month:'short', year:'2-digit' }).replace(' ', " '");
+
+  whatifChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: s.dates, datasets },
+    options: { responsive:true, maintainAspectRatio:false, animation: animate ? { duration:600 } : false,
+      interaction: { mode:'index', intersect:false },
+      plugins: { legend:{display:false},
+        tooltip: { backgroundColor:'#161b22', borderColor:'#2a3340', borderWidth:1, padding:9,
+          titleColor:'#8b95a3', bodyColor:'#e7e9ec', titleFont:{family:'Inter',size:10}, bodyFont:{family:'Inter',size:12,weight:'600'},
+          filter: item => item.datasetIndex !== putInIndex,
+          callbacks: { title: items => fmtDay(items[0].label), label: c => ` ${c.dataset.label}: ${fmtUSD(c.parsed.y)}` } } },
+      scales: {
+        x: { grid:{display:false}, border:{display:false},
+             ticks:{ color:'#5d6571', font:{family:'Inter',size:9}, maxTicksLimit:6, maxRotation:0,
+                     callback(v) { return tick(this.getLabelForValue(v)); } } },
+        y: { position:'right', grid:{color:'rgba(255,255,255,0.04)'}, border:{display:false},
+             ticks:{ color:'#5d6571', font:{family:'Inter',size:9}, maxTicksLimit:5, callback: fmtUSDShort } } } }
+  });
 }
 
 function probColor(p) { if (p < 40) return 'var(--negative)'; if (p < 60) return 'var(--warning)'; return 'var(--positive)'; }
@@ -2840,6 +3148,34 @@ document.getElementById('watch-toggle').addEventListener('click', e => {
 document.getElementById('beginner-toggle').addEventListener('click', () => {
   setBeginnerMode(!beginnerMode);
 });
+document.getElementById('wi-periods').addEventListener('click', e => {
+  const btn = e.target.closest('.wi-period');
+  if (!btn || btn.disabled || !wi.data) return;
+  wi.period = wi.pickedPeriod = btn.dataset.period;
+  document.querySelectorAll('.wi-period').forEach(b => b.classList.toggle('on', b === btn));
+  drawWhatIf(true);
+});
+const wiAmountInput = document.getElementById('wi-amount');
+const wiMeasure = document.createElement('canvas').getContext('2d');
+// Size the inline amount box to its text so the sentence reads without a gap.
+function fitAmountInput() {
+  const cs = getComputedStyle(wiAmountInput);
+  wiMeasure.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+  wiAmountInput.style.width = Math.ceil(wiMeasure.measureText(wiAmountInput.value || '0').width) + 2 + 'px';
+}
+wiAmountInput.addEventListener('input', () => {
+  fitAmountInput();
+  const n = parseFloat(wiAmountInput.value.replace(/[^0-9.]/g, ''));
+  if (!isFinite(n) || n <= 0) return;
+  wi.amount = Math.min(n, 1e9);
+  drawWhatIf(false);
+});
+wiAmountInput.addEventListener('blur', () => {
+  wiAmountInput.value = Math.round(wi.amount).toLocaleString('en-US');
+  fitAmountInput();
+});
+document.fonts.ready.then(fitAmountInput);
+wiAmountInput.addEventListener('keydown', e => { if (e.key === 'Enter') wiAmountInput.blur(); });
 // Paint the glossary labels once at startup, honouring the saved preference.
 setBeginnerMode(beginnerMode);
 
