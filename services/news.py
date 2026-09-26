@@ -41,6 +41,12 @@ def short_company_name(ticker):
     return _SEARCH_NAMES.get(ticker.upper()) or None
 
 
+def _title_key(title):
+    """Title with case, punctuation and spacing removed, for spotting syndicated copies
+    that differ only by a trailing period or a curly apostrophe."""
+    return re.sub(r"[\W_]+", "", title.lower())
+
+
 def _parse_iso(s):
     """Best-effort ISO-ish date parse → 'Jun 8, 2026' or original string."""
     if not s:
@@ -80,18 +86,20 @@ def get_news_headlines(ticker):
                     "searchIn": "title,description",
                     "sortBy":   "publishedAt",
                     "language": "en",
-                    "pageSize": 8,
+                    "pageSize": 12,   # headroom for dropped duplicates; 8 are kept
                     "apiKey":   news_api_key,
                 },
                 timeout=8,
             )
             if r.status_code == 200:
                 articles = r.json().get("articles", [])
-                items = []
+                items, seen = [], set()
                 for a in articles:
                     title = (a.get("title") or "").strip()
-                    if not title or title == "[Removed]":
+                    # Syndicated stories arrive once per outlet; keep the first.
+                    if not title or title == "[Removed]" or _title_key(title) in seen:
                         continue
+                    seen.add(_title_key(title))
                     items.append({
                         "title":        title,
                         "description":  (a.get("description") or "").strip(),
@@ -166,9 +174,9 @@ def _google_news(query, limit=8):
                 if src is None:
                     source = maybe_src
         # Syndicated stories show up once per outlet; keep the first.
-        if title.lower() in seen:
+        if _title_key(title) in seen:
             continue
-        seen.add(title.lower())
+        seen.add(_title_key(title))
         items.append({
             "title":        title,
             "description":  "",
