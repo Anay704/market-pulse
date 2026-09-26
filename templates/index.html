@@ -574,7 +574,7 @@
       position: relative;
     }
     .term:hover, .term:focus-visible { border-bottom-color: var(--accent); color: var(--accent); outline: none; }
-    .term .tip {
+    .term .tip, .cite .tip {
       position: absolute; bottom: calc(100% + 8px); left: 0;
       width: 250px; z-index: 500;
       background: var(--bg-elev);
@@ -590,10 +590,11 @@
       pointer-events: none;
       white-space: normal;
     }
-    .term .tip strong { color: var(--text); display: block; margin-bottom: 3px; font-weight: 600; }
-    .term:hover .tip, .term:focus-visible .tip { opacity: 1; visibility: visible; transform: translateY(0); }
+    .term .tip strong, .cite .tip strong { color: var(--text); display: block; margin-bottom: 3px; font-weight: 600; }
+    .term:hover .tip, .term:focus-visible .tip,
+    .cite:hover .tip, .cite:focus-visible .tip { opacity: 1; visibility: visible; transform: translateY(0); }
     /* Flip near the right edge so the tooltip never leaves the viewport. */
-    .term.tip-right .tip { left: auto; right: 0; }
+    .term.tip-right .tip, .cite.tip-right .tip { left: auto; right: 0; }
 
     /* Good / average / watch-out verdict chips next to a number. */
     .chip {
@@ -676,6 +677,42 @@
     .bl-risk.medium  { background: rgba(245,192,96,0.13);  color: var(--warning); }
     .bl-risk.higher  { background: rgba(244,113,116,0.13); color: var(--negative); }
     .bl-risk.unknown { background: var(--bg-elev); color: var(--text-3); }
+
+    /* Numbered source markers on the bottom line, and the list they point to. */
+    .cite {
+      position: relative;
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 16px; height: 16px; padding: 0 4px; margin-left: 3px;
+      border: 1px solid var(--border-strong); border-radius: 5px;
+      background: var(--bg-elev); color: var(--text-2);
+      font: 700 9.5px/1 var(--font-body);
+      vertical-align: 2px; cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .cite:hover, .cite:focus-visible { border-color: var(--accent); color: var(--accent); outline: none; }
+    .cite .tip { text-align: left; }
+    .bl-sources { margin: -4px 0 16px; }
+    .bl-sources summary {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11.5px; font-weight: 600; color: var(--text-3);
+      cursor: pointer; list-style: none;
+    }
+    .bl-sources summary::-webkit-details-marker { display: none; }
+    .bl-sources summary::before { content: '▸'; font-size: 10px; transition: transform .15s; }
+    .bl-sources[open] summary::before { transform: rotate(90deg); }
+    .bl-sources summary:hover { color: var(--text-2); }
+    .bl-src-list { list-style: none; display: grid; gap: 2px; margin-top: 10px; }
+    .bl-src-list li {
+      display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: baseline;
+      padding: 5px 8px; border-radius: 8px;
+      font-size: 12.5px; line-height: 1.55; color: var(--text-2);
+      transition: background .4s;
+    }
+    .bl-src-list li.flash { background: var(--accent-soft); }
+    .bl-src-list .cite { margin-left: 0; cursor: default; }
+    .bl-src-list a { color: var(--text); text-decoration: none; }
+    .bl-src-list a:hover { color: var(--accent); text-decoration: underline; }
+    .bl-src-meta { color: var(--text-3); }
     @media (max-width: 700px) {
       .bottom-line { padding: 20px 18px; }
       .bl-headline { font-size: 20px; }
@@ -1697,6 +1734,10 @@
         <div class="bl-headline" id="bl-headline">—</div>
         <div class="bl-body" id="bl-body"></div>
         <div class="bl-bullets" id="bl-bullets"></div>
+        <details class="bl-sources" id="bl-sources">
+          <summary id="bl-sources-sum"></summary>
+          <ol class="bl-src-list" id="bl-src-list"></ol>
+        </details>
         <div class="bl-foot">
           <span class="bl-risk unknown" id="bl-risk">—</span>
           <span id="bl-risk-note"></span>
@@ -2750,21 +2791,61 @@ function renderBottomLine(plain) {
   const card = document.getElementById('bottom-line');
   if (!plain || !plain.headline) { card.classList.remove('visible'); return; }
 
+  // Sources are numbered in the order they're first cited, like footnotes.
+  // Three per sentence is enough to check a claim; more reads as clutter.
+  const facts = plain.facts || [], order = [];
+  const cite = srcs => (srcs || []).filter(i => facts[i]).slice(0, 3).map(i => {
+    if (!order.includes(i)) order.push(i);
+    const n = order.indexOf(i) + 1;
+    return `<button type="button" class="cite" data-n="${n}" aria-label="Source ${n}">${n}`
+         + `<span class="tip">${sourceTip(facts[i])}</span></button>`;
+  }).join('');
+
   document.getElementById('bl-headline').textContent = plain.headline;
-  document.getElementById('bl-body').textContent     = plain.what_it_means || '';
+  const parts = plain.what_it_means_parts && plain.what_it_means_parts.length
+    ? plain.what_it_means_parts : [{ text: plain.what_it_means || '', sources: [] }];
+  document.getElementById('bl-body').innerHTML = parts.map(p => escHtml(p.text) + cite(p.sources)).join(' ');
 
   const bullets = Array.isArray(plain.bullets) ? plain.bullets : [];
   document.getElementById('bl-bullets').innerHTML = bullets
-    .map(b => `<div class="bl-bullet"><span class="bl-dot">▸</span><span>${escHtml(b)}</span></div>`)
+    .map(b => typeof b === 'string' ? { text: b, sources: [] } : b)
+    .map(b => `<div class="bl-bullet"><span class="bl-dot">▸</span><span>${escHtml(b.text)}${cite(b.sources)}</span></div>`)
     .join('');
 
   const risk = ['lower','medium','higher'].includes(plain.risk_level) ? plain.risk_level : 'unknown';
   const riskEl = document.getElementById('bl-risk');
   riskEl.className = 'bl-risk ' + risk;
   riskEl.textContent = risk === 'unknown' ? 'Risk unrated' : risk.toUpperCase() + ' RISK';
-  document.getElementById('bl-risk-note').textContent = RISK_NOTE[risk];
+  document.getElementById('bl-risk-note').innerHTML = escHtml(RISK_NOTE[risk]) + cite(plain.risk_sources);
+
+  const sources = document.getElementById('bl-sources');
+  sources.open = false;
+  sources.style.display = order.length ? '' : 'none';
+  document.getElementById('bl-sources-sum').textContent =
+    `Where this comes from · ${order.length} source${order.length === 1 ? '' : 's'}`;
+  document.getElementById('bl-src-list').innerHTML = order.map((i, k) =>
+    `<li id="bl-src-${k + 1}"><span class="cite">${k + 1}</span><span>${sourceLine(facts[i])}</span></li>`).join('');
 
   card.classList.add('visible');
+}
+
+/** Hover text for a citation marker. */
+function sourceTip(f) {
+  return f.kind === 'news'
+    ? `<strong>“${escHtml(f.title)}”</strong>${escHtml(f.source)}${f.published_at ? ' · ' + escHtml(f.published_at) : ''}`
+    : `<strong>${escHtml(f.label)}: ${escHtml(f.value)}</strong>${escHtml(f.source)} data`;
+}
+
+/** A line in the sources list: the data point, or the headline linked to its article. */
+function sourceLine(f) {
+  if (f.kind !== 'news') {
+    return `${escHtml(f.label)}: <strong style="color:var(--text)">${escHtml(f.value)}</strong>`
+         + ` <span class="bl-src-meta">· ${escHtml(f.source)}</span>`;
+  }
+  const title = escHtml(f.title), meta = escHtml(f.source) + (f.published_at ? ' · ' + escHtml(f.published_at) : '');
+  const link = /^https?:\/\//.test(f.url || '')
+    ? `<a href="${escHtml(f.url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title;
+  return `${link} <span class="bl-src-meta">· ${meta}</span>`;
 }
 
 // ══════════════════════ WHAT IF YOU'D INVESTED ══════════════════════
@@ -3431,6 +3512,19 @@ wiAmountInput.addEventListener('blur', () => {
 });
 document.fonts.ready.then(fitAmountInput);
 wiAmountInput.addEventListener('keydown', e => { if (e.key === 'Enter') wiAmountInput.blur(); });
+const bottomLine = document.getElementById('bottom-line');
+bottomLine.addEventListener('click', e => {
+  const pill = e.target.closest('.cite[data-n]');
+  if (!pill) return;
+  const item = document.getElementById('bl-src-' + pill.dataset.n);
+  document.getElementById('bl-sources').open = true;
+  bottomLine.querySelectorAll('.bl-src-list li.flash').forEach(li => li.classList.remove('flash'));
+  if (item) { item.classList.add('flash'); item.scrollIntoView({ block:'nearest', behavior:'smooth' }); }
+});
+bottomLine.addEventListener('mouseover', e => {
+  const pill = e.target.closest('.cite[data-n]');
+  if (pill) pill.classList.toggle('tip-right', pill.getBoundingClientRect().left + 270 > window.innerWidth);
+});
 document.getElementById('mv-chips').addEventListener('click', e => {
   const chip = e.target.closest('.mv-chip');
   if (chip && mv.data) selectMove(Number(chip.dataset.i), false);
