@@ -1,4 +1,4 @@
-# Prediction market odds via Kalshi with Polymarket fallback, plus arbitrage scan.
+# Prediction market odds via Kalshi (series-matched per ticker), plus arbitrage scan.
 #
 # NOTE (June 2026): Kalshi rotated their public API:
 #   - price fields are now `*_dollars` (e.g. yes_ask_dollars = 0.43) not `*` cents
@@ -6,7 +6,7 @@
 #   - the default /markets endpoint surfaces multi-leg sports parlays (KXMVE*)
 #     first; real financial markets must be fetched per-series.
 
-import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -26,91 +26,136 @@ def _num(value, default=None):
         return default
 
 
-def get_prediction_markets(ticker, company_name=""):
-    """Fetch up to 3 prediction markets relevant to *ticker*.
+# Series-catalogue cache. Listing every series in a category costs ~0.15s, so we
+# fetch the three relevant categories once and reuse the map for an hour.
+_SERIES_CACHE      = {"at": 0.0, "map": {}}
+_SERIES_CACHE_TTL  = 3600
+_SERIES_CATEGORIES = ("Companies", "Financials", "Crypto")
 
-    Tries Kalshi first; falls back to Polymarket if unavailable.
 
-    Returns (markets: list[dict], source: str).
-    Each market dict has keys: title, yes_pct, no_pct, volume.
+def _series_catalogue():
+    """{series_ticker: title} for the categories that hold single-name markets."""
+    now = time.time()
+    if _SERIES_CACHE["map"] and now - _SERIES_CACHE["at"] < _SERIES_CACHE_TTL:
+        return _SERIES_CACHE["map"]
+
+    catalogue = {}
+    for category in _SERIES_CATEGORIES:
+        try:
+            r = requests.get(
+                "https://api.elections.kalshi.com/trade-api/v2/series",
+                params={"category": category, "limit": 200},
+                timeout=8,
+            )
+            if r.status_code != 200:
+                continue
+            for s in r.json().get("series", []):
+                if s.get("ticker"):
+                    catalogue[s["ticker"]] = s.get("title") or ""
+        except Exception:
+            continue
+
+    if catalogue:
+        _SERIES_CACHE.update(at=now, map=catalogue)
+    return catalogue
+
+
+def _series_for_ticker(ticker):
+    """Series tickers that genuinely belong to *ticker*.
+
+    Kalshi names single-name series after the symbol — AAPL → KXAAPLA, BTC → KXBTC.
+    Matching only these exact shapes is what keeps unrelated markets out; a
+    substring search would pull in every series that happens to contain the
+    letters (e.g. "KXCOSTCO" for "COST").
     """
-    # ── 1. Kalshi ──────────────────────────────────────────────────────────────
+    base = (ticker or "").upper().split("-")[0]
+    if not base:
+        return []
+    candidates = (f"KX{base}A", f"KX{base}", base)
+    catalogue  = _series_catalogue()
+    return [c for c in candidates if c in catalogue]
+
+
+def _market_price_pct(m):
+    """Best available YES probability as an integer 0-100, or None if unpriced.
+
+    Kalshi's current API returns dollars (0.0-1.0) in `*_dollars` fields. The old
+    integer-cent fields are read as a fallback for older/cached payloads.
+    """
+    last = _num(m.get("last_price_dollars"))
+    bid  = _num(m.get("yes_bid_dollars"))
+    ask  = _num(m.get("yes_ask_dollars"))
+
+    if last is not None and last > 0:
+        price = last
+    elif bid is not None and ask is not None and (bid > 0 or ask > 0):
+        price = (bid + ask) / 2.0
+    elif ask is not None and ask > 0:
+        price = ask
+    else:
+        cents = _num(m.get("last_price")) or _num(m.get("yes_bid")) or _num(m.get("yes_ask"))
+        if cents is None or cents <= 0:
+            return None
+        price = cents / 100.0
+
+    return int(round(max(0.0, min(1.0, price)) * 100))
+
+
+def get_prediction_markets(ticker, company_name=""):
+    """Fetch up to 3 prediction markets that are genuinely about *ticker*.
+
+    Returns (markets: list[dict], source: str) — each dict has title, yes_pct,
+    no_pct, volume.
+
+    Returns an empty list when nothing relevant is trading. That is deliberate:
+    the default /markets feed is dominated by multi-leg sports parlays (KXMVE*),
+    so a "show something" fallback surfaces baseball odds on a stock page.
+    """
     try:
-        r = requests.get(
-            "https://api.elections.kalshi.com/trade-api/v2/markets",
-            params={"limit": 20, "status": "open"},
-            headers={"Content-Type": "application/json", "Accept": "application/json"},
-            timeout=8,
-        )
-        if r.status_code == 200:
-            all_mkts = r.json().get("markets", [])
+        out = []
+        for series_ticker in _series_for_ticker(ticker):
+            r = requests.get(
+                "https://api.elections.kalshi.com/trade-api/v2/markets",
+                params={"series_ticker": series_ticker, "status": "open", "limit": 20},
+                headers={"Accept": "application/json"},
+                timeout=8,
+            )
+            if r.status_code != 200:
+                continue
 
-            # Find the longest word in company_name (>3 chars) for fuzzy matching
-            company_word = ""
-            if company_name:
-                company_word = next(
-                    (w for w in company_name.lower().split() if len(w) > 3), ""
-                )
+            for m in r.json().get("markets", []):
+                if (m.get("event_ticker") or "").startswith("KXMVE"):
+                    continue  # multi-leg parlay
+                yes_pct = _market_price_pct(m)
+                if yes_pct is None:
+                    continue  # unpriced — nothing meaningful to show
+                volume = int(_num(m.get("volume_fp"), 0.0) or _num(m.get("volume"), 0.0) or 0)
+                if volume < MIN_VOLUME:
+                    continue  # dead or already-decided contract
 
-            fin_kw = [
-                "s&p", "sp500", "nasdaq", "dow", "fed", "inflation",
-                "recession", "rate", "gdp", "economy", "market",
-            ]
-            ticker_hits, fin_hits = [], []
-            for m in all_mkts:
-                text = f"{m.get('title', '')} {m.get('subtitle', '')}".lower()
-                if ticker.lower() in text or (company_word and company_word in text):
-                    ticker_hits.append(m)
-                elif any(kw in text for kw in fin_kw):
-                    fin_hits.append(m)
+                # yes_sub_title carries the actual strike ("Above 170000"); the
+                # title is the same long question repeated across every strike.
+                title  = (m.get("title") or "Untitled").strip()
+                strike = (m.get("yes_sub_title") or "").strip()
+                # Only append the strike when the title doesn't already state it —
+                # some series repeat it ("...above 172000..." / "Above 172000").
+                if strike and strike.lower() not in title.lower():
+                    title = f"{title} — {strike}"
+                if len(title) > 140:
+                    title = title[:137] + "…"
 
-            chosen = ticker_hits[:3]
-            if len(chosen) < 3:
-                chosen += fin_hits[: 3 - len(chosen)]
-            if len(chosen) < 3:
-                chosen = all_mkts[:3]
-
-            out = []
-            for m in chosen[:3]:
-                yes_b = m.get("yes_bid") or m.get("yes_ask") or m.get("last_price") or 50
                 out.append({
-                    "title":   m.get("title", "Unknown"),
-                    "yes_pct": int(yes_b),
-                    "no_pct":  100 - int(yes_b),
-                    "volume":  int(m.get("volume") or 0),
+                    "title":   title,
+                    "yes_pct": yes_pct,
+                    "no_pct":  100 - yes_pct,
+                    "volume":  volume,
                 })
-            if out:
-                return out, "Kalshi"
-    except Exception:
-        pass
 
-    # ── 2. Polymarket fallback ─────────────────────────────────────────────────
-    try:
-        r = requests.get(
-            "https://gamma-api.polymarket.com/markets",
-            params={"active": "true", "limit": 5},
-            headers={"Accept": "application/json"},
-            timeout=8,
-        )
-        if r.status_code == 200:
-            out = []
-            for m in r.json()[:5]:
-                raw = m.get("outcomePrices", "[]")
-                try:
-                    prices  = json.loads(raw) if isinstance(raw, str) else raw
-                    yes_pct = round(float(prices[0]) * 100) if prices else 50
-                except Exception:
-                    yes_pct = 50
-                out.append({
-                    "title":   m.get("question", "Unknown"),
-                    "yes_pct": int(yes_pct),
-                    "no_pct":  100 - int(yes_pct),
-                    "volume":  int(float(m.get("volume") or 0)),
-                })
-            if out:
-                return out, "Polymarket"
-    except Exception:
-        pass
+        if out:
+            out.sort(key=lambda m: m["volume"], reverse=True)
+            return out[:3], "Kalshi"
+    except Exception as exc:
+        print(f"Kalshi prediction-market error: {exc}")
 
     return [], "unavailable"
 

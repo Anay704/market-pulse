@@ -1753,7 +1753,7 @@
 
 <footer>
   <span class="ft-logo">Market Pulse</span> v3.0 &nbsp;·&nbsp; Powered by Anthropic Claude &nbsp;·&nbsp;
-  yFinance · NewsAPI · Kalshi · Polymarket &nbsp;·&nbsp; Not financial advice.
+  yFinance · NewsAPI · Kalshi &nbsp;·&nbsp; Not financial advice.
 </footer>
 
 <!-- ─── HIDDEN PRINTABLE REPORT (populated on download) ─── -->
@@ -2256,7 +2256,11 @@ function renderSentiment(sentiment) {
 function renderMarkets(markets, source) {
   const el = document.getElementById('d-kalshi'), srcEl = document.getElementById('d-mkt-src');
   srcEl.textContent = source && source !== 'unavailable' ? '· ' + source : '';
-  if (!markets || !markets.length) { el.innerHTML = '<div class="mkt-empty">Prediction market data unavailable</div>'; return; }
+  if (!markets || !markets.length) {
+    el.innerHTML = '<div class="mkt-empty">Nobody is running betting markets on this company right now. '
+                 + 'That is normal — only a few hundred companies have them.</div>';
+    return;
+  }
   el.innerHTML = markets.map(m => {
     const yp = Math.max(1, Math.min(99, m.yes_pct)), np = 100 - yp;
     return `<div class="mkt-item"><div class="mkt-title">${escHtml(m.title)}</div><div class="odds-bar"><div class="odds-yes" style="width:${yp}%"></div><div class="odds-no"></div></div><div class="odds-lbls"><span class="pos">YES ${yp}%</span><span class="muted" style="font-size:10px">Vol ${(m.volume||0).toLocaleString()}</span><span class="neg">NO ${np}%</span></div></div>`;

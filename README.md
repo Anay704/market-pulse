@@ -8,7 +8,7 @@ Built with Flask + Anthropic Claude + yFinance. Single-page app, no framework, ~
 
 ## What it does
 
-- **Dashboard** — Type any of 147 supported symbols (stocks, ETFs, crypto). Pulls live quotes from yFinance, relevant Kalshi / Polymarket markets, the day's headlines, and runs Claude Sonnet over them for an earnings summary, a 0–100 sentiment gauge, an event-probability score (Bayesian blend of options flow, prediction-market odds, news sentiment, and price momentum), and a three-sentence analyst verdict.
+- **Dashboard** — Type any of 147 supported symbols (stocks, ETFs, crypto). Pulls live quotes from yFinance, genuinely relevant Kalshi markets, the day's headlines, and runs Claude Sonnet over them for an earnings summary, a 0–100 sentiment gauge, an event-probability score (Bayesian blend of options flow, prediction-market odds, news sentiment, and price momentum), and a three-sentence analyst verdict.
 - **Trade Analyzer** — Upload a chart screenshot. Claude Vision identifies the trend, pattern, support/resistance, and volume trend, then combines that technical score with fundamentals (P/E, momentum, 52-week range, MA-30) and the sentiment signal into a STRONG BUY → STRONG SELL recommendation. Optional position-sizer returns stop loss, target, risk/reward, and a suggested trim percentage.
 - **Kalshi Opportunities** — Pulls 50 open prediction markets, computes the implied edge (`1 − total YES+NO cost`) and per-dollar expected value, categorizes by theme (Fed & rates, inflation, stocks, crypto, politics, tech & AI), sorts by edge, and surfaces the top 5 as gold-bordered cards.
 - **Portfolio** — Add holdings (ticker, shares, cost basis), get aggregate value and P/L, sector exposure as a doughnut chart, upcoming earnings for each position, and a Claude-written 3-4 sentence posture summary.
@@ -27,7 +27,7 @@ Built with Flask + Anthropic Claude + yFinance. Single-page app, no framework, ~
 | AI | Anthropic Claude Sonnet · Claude Vision (multimodal) |
 | Market data | yFinance |
 | News | NewsAPI · Google News RSS (fallback) |
-| Prediction markets | Kalshi · Polymarket (fallback) |
+| Prediction markets | Kalshi (per-ticker series matching) |
 | Frontend | Vanilla JS SPA · Chart.js · Inter + Playfair Display |
 
 ---
@@ -80,7 +80,7 @@ market-pulse/
 ├── services/
 │   ├── stock.py                # yFinance: prices, fundamentals, options flow, history
 │   ├── news.py                 # NewsAPI + Google News RSS fallback
-│   ├── kalshi.py               # Kalshi + Polymarket markets + arbitrage scanner
+│   ├── kalshi.py               # Kalshi per-ticker markets + arbitrage scanner
 │   ├── ai.py                   # All Claude calls: earnings, verdict, sentiment, vision, narrative
 │   ├── sentiment.py            # Probability engine + fundamental score + price targets
 │   ├── trade_analyzer.py       # Combined score + position math + recommendations
