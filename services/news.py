@@ -7,6 +7,39 @@ from datetime import datetime
 
 import requests
 
+from services.symbols import get_all_symbols
+
+# Required alongside the company name so product listings and deal posts
+# ("$23 Apple Watch charger at Amazon") don't crowd out market news.
+_FINANCE_CONTEXT = "(stock OR shares OR earnings OR revenue OR investors OR analysts OR sales OR profit)"
+
+# Stripped from display names to get the name headlines actually use:
+# "Apple Inc." -> "Apple", "Alphabet (Google) Class A" -> "Alphabet",
+# "Berkshire Hathaway B" -> "Berkshire Hathaway", "S&P 500 ETF (SPDR)" -> "S&P 500".
+_NAME_NOISE = re.compile(
+    r"\s*\([^)]*\)"
+    r"|\s+Class\s+[A-Z]\b"
+    r"|,?\s+(Inc|Corp|Corporation|Company|Co|Holdings|plc|Ltd|Platforms|ETF)\b\.?"
+    r"|\s+[A-C]$"
+)
+
+_SEARCH_NAMES = None
+
+
+def _search_name(ticker):
+    """The name to search news for, or None for tickers outside the symbol list.
+
+    Searching the bare ticker matches ordinary words and other languages —
+    "KO" returns boxing knockouts — so the company name is used instead.
+    """
+    global _SEARCH_NAMES
+    if _SEARCH_NAMES is None:
+        _SEARCH_NAMES = {
+            s["ticker"]: _NAME_NOISE.sub("", s["name"]).rstrip(" &")
+            for s in get_all_symbols()
+        }
+    return _SEARCH_NAMES.get(ticker.upper()) or None
+
 
 def _parse_iso(s):
     """Best-effort ISO-ish date parse → 'Jun 8, 2026' or original string."""
@@ -35,6 +68,7 @@ def get_news_headlines(ticker):
         title, description, url, source, published_at
     """
     news_api_key = os.environ.get("NEWS_API_KEY")
+    subject      = _search_name(ticker) or ticker
 
     # ── 1. NewsAPI ─────────────────────────────────────────────────────────────
     if news_api_key:
@@ -42,7 +76,8 @@ def get_news_headlines(ticker):
             r = requests.get(
                 "https://newsapi.org/v2/everything",
                 params={
-                    "q":        ticker,
+                    "q":        f'"{subject}" AND {_FINANCE_CONTEXT}',
+                    "searchIn": "title,description",
                     "sortBy":   "publishedAt",
                     "language": "en",
                     "pageSize": 8,
@@ -72,7 +107,8 @@ def get_news_headlines(ticker):
     # ── 2. Google News RSS fallback ────────────────────────────────────────────
     try:
         r = requests.get(
-            f"https://news.google.com/rss/search?q={ticker}+stock&hl=en-US",
+            "https://news.google.com/rss/search",
+            params={"q": f'"{subject}" stock', "hl": "en-US"},
             headers={"User-Agent": "MarketPulse/1.0"},
             timeout=8,
         )
