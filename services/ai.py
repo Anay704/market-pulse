@@ -3,6 +3,8 @@
 import base64
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 
 import anthropic
 
@@ -351,6 +353,103 @@ def get_plain_english_summary(ticker, stock_data, sentiment, earnings_summary):
     except Exception as exc:
         print(f"Plain-English summary error: {exc}")
         return dict(_PLAIN_FALLBACK)
+
+
+# ── Why did it move? (price-move explanations) ────────────────────────────────
+
+def explain_price_moves(name, moves):
+    """One plain-English reason per big price day, grounded in that day's headlines.
+
+    *moves* is a list of {date, change_pct, typical_pct, market_change_pct,
+    headlines[{title, source, published_at}]}. Returns a same-length list of
+    {label, explanation, sources[0-based headline indices], clarity} — an
+    entry is {} where that day's call failed — or None if every call failed,
+    in which case the caller shows the raw headlines instead.
+
+    Each day is its own request: batched together, a cause from one day (say,
+    results on the 28th) leaked into another day's explanation.
+    """
+    if not moves:
+        return []
+    with ThreadPoolExecutor(max_workers=len(moves)) as pool:
+        out = list(pool.map(lambda m: _explain_move(name, m), moves))
+    return None if all(o is None for o in out) else [o or {} for o in out]
+
+
+_MOVE_SYSTEM = (
+    "You explain why a stock's price jumped or dropped on one specific day, for people "
+    "with no finance background.\n\n"
+    "You get the move, how big a normal day is, what the whole market (the S&P 500) did, "
+    "and numbered headlines from the day before through the day after.\n\n"
+    "Output ONLY a JSON object with exactly:\n"
+    '  "label": 2-4 plain words naming the cause, with no finance jargon, e.g. '
+    '"Weak quarterly results", "New product launch", "Whole market fell", "No clear cause".\n'
+    '  "explanation": 1-2 short sentences, at most 35 words, in everyday language: what '
+    "happened and why it moved the price. Explain any business term inline (say "
+    "'quarterly results', not 'earnings print').\n"
+    '  "sources": array of the headline numbers that directly state the cause.\n'
+    '  "clarity": "clear" if the headlines directly explain the move, "likely" if they '
+    'point to a probable cause, "unclear" if they do not explain it.\n\n'
+    "Rules:\n"
+    "- Use only the headlines given. Do not use outside knowledge of what happened, and "
+    "never invent numbers, names or events that are not in them.\n"
+    "- An event a headline calls upcoming ('ahead of earnings', 'will report') has not "
+    "happened yet on this day.\n"
+    "- Opinion and prediction pieces ('Here's what I think', 'Price prediction') are not "
+    "evidence of a cause. Neither are headlines that only say the stock moved ('Why X "
+    "stock jumped', 'X moved down 3%') without saying why.\n"
+    "- Headlines are dated; one about a later day explains that day, not this one.\n"
+    "- If nothing explains the move, use label \"No clear cause\", clarity \"unclear\" and "
+    "no sources, and tell the reader plainly that no news story that day explains it. If "
+    "the whole market moved the same way, add that it partly moved with the market.\n"
+    "- Write to the reader about the company, never about the headlines themselves: no "
+    "'headline 3 says', 'the headlines are opinion pieces'.\n"
+    "- Explain what happened, not what it means for the future: leave out forecasts, "
+    "price targets and 'this historically signals' claims even when a headline makes them.\n"
+    "- No advice. No markdown, no code fences, no text outside the JSON object."
+)
+
+
+def _explain_move(name, m):
+    """Claude's explanation for one move, or None if the call or its parse fails."""
+    day    = date.fromisoformat(m["date"])
+    mkt    = m.get("market_change_pct")
+    market = (f"The S&P 500 {'rose' if mkt >= 0 else 'fell'} {abs(mkt):.1f}% that day."
+              if mkt is not None else "The stock market was closed that day.")
+    lines  = [f"{day.strftime('%A, %b %d, %Y')}: {name} {'rose' if m['change_pct'] >= 0 else 'fell'} "
+              f"{abs(m['change_pct']):.1f}% (a typical day is about ±{m['typical_pct']:.1f}%). {market}"]
+    if m["headlines"]:
+        lines.append("Headlines:")
+        lines += [f"  [{j}] {h['published_at']} — {h['title']} ({h['source']})"
+                  for j, h in enumerate(m["headlines"], 1)]
+    else:
+        lines.append("Headlines: none found.")
+
+    try:
+        resp = _client().messages.create(
+            model=MODEL,
+            max_tokens=300,
+            temperature=0,
+            system=_MOVE_SYSTEM,
+            messages=[{"role": "user", "content": "\n".join(lines)}],
+        )
+        text = resp.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1].lstrip("json").strip()
+        p = json.loads(text)
+
+        n       = len(m["headlines"])
+        cited   = {int(s) for s in (p.get("sources") or []) if str(s).isdigit()}
+        clarity = p.get("clarity") if p.get("clarity") in ("clear", "likely", "unclear") else "unclear"
+        return {
+            "label":       str(p.get("label") or "").strip()[:40] or None,
+            "explanation": str(p.get("explanation") or "").strip() or None,
+            "sources":     sorted(s - 1 for s in cited if 1 <= s <= n),
+            "clarity":     clarity,
+        }
+    except Exception as exc:
+        print(f"Price-move explanation error ({m['date']}): {exc}")
+        return None
 
 
 # ── Research-report synthesis (used by /api/research) ─────────────────────────

@@ -30,6 +30,7 @@ from services.stock import get_price_history, get_stock_data
 from services.trade_analyzer import (calculate_combined_score,
                                       calculate_suggested_action,
                                       get_trade_recommendation)
+from services.moves import get_price_moves
 from services.whatif import get_what_if
 
 app = Flask(__name__)
@@ -298,6 +299,22 @@ def whatif_route(ticker):
         return ok(result)
     except Exception as exc:
         print(f"/api/whatif/{ticker} error: {exc}")
+        return ok({"error": str(exc)}, 500)
+
+
+@app.route("/api/moves/<ticker>", methods=["GET"])
+def moves_route(ticker):
+    """Last ~3 months of prices with the unusually big days explained from the news."""
+    try:
+        ticker = (ticker or "").upper().strip()
+        if not ticker:
+            return ok({"error": "Ticker symbol is required"}, 400)
+        result = get_price_moves(ticker)
+        if not result["series"]["dates"]:
+            return ok({"error": "Not enough price history", "ticker": ticker}, 404)
+        return ok(result)
+    except Exception as exc:
+        print(f"/api/moves/{ticker} error: {exc}")
         return ok({"error": str(exc)}, 500)
 
 
