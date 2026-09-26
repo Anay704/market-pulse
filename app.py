@@ -26,7 +26,7 @@ from services.symbols import get_all_symbols
 from services.sentiment import (calculate_event_probability,
                                  calculate_fundamental_score,
                                  calculate_price_targets)
-from services.stock import get_price_history, get_stock_data
+from services.stock import get_price_changes, get_price_history, get_stock_data
 from services.trade_analyzer import (calculate_combined_score,
                                       calculate_suggested_action,
                                       get_trade_recommendation)
@@ -105,9 +105,10 @@ def analyze():
         # ordering constraints are the data dependencies below.
         with ThreadPoolExecutor(max_workers=4) as pool:
             # Stage 1 — independent fetches.
-            f_stock = pool.submit(get_stock_data, ticker)
-            f_chart = pool.submit(get_price_history, ticker)
-            f_news  = pool.submit(get_news_headlines, ticker)
+            f_stock   = pool.submit(get_stock_data, ticker)
+            f_chart   = pool.submit(get_price_history, ticker)
+            f_news    = pool.submit(get_news_headlines, ticker)
+            f_changes = pool.submit(get_price_changes, ticker)
 
             stock = f_stock.result()
             if "error" in stock:
@@ -115,21 +116,23 @@ def analyze():
             chart               = f_chart.result()
             headlines, news_src = f_news.result()
             titles              = extract_titles(headlines)   # strings for AI calls
+            changes             = f_changes.result()
 
-            # Stage 2 — needs stock and/or headlines.
+            # Stage 2 — needs stock and/or headlines. The plain-English summary
+            # works from primary sources (data + headlines) so it can cite them,
+            # which also means it doesn't wait on the other AI calls.
             f_earnings  = pool.submit(get_earnings_summary, ticker, titles)
             f_markets   = pool.submit(get_prediction_markets, ticker, stock["name"])
             f_sentiment = pool.submit(get_sentiment_score, ticker, stock, titles)
+            f_plain     = pool.submit(get_plain_english_summary,
+                                      ticker, stock, headlines, changes)
 
             earnings         = f_earnings.result()
             markets, mkt_src = f_markets.result()
             sentiment        = f_sentiment.result()
 
             # Stage 3 — needs the stage-2 results.
-            f_verdict = pool.submit(get_analyst_verdict, stock, earnings, markets)
-            f_plain   = pool.submit(get_plain_english_summary,
-                                    ticker, stock, sentiment, earnings)
-            verdict = f_verdict.result()
+            verdict = pool.submit(get_analyst_verdict, stock, earnings, markets).result()
             plain   = f_plain.result()
 
         prob = calculate_event_probability(

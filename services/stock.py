@@ -202,6 +202,21 @@ def get_daily_closes(ticker, adjusted=True):
     return [(r[0], r[col]) for r in hit[1]]
 
 
+def get_price_changes(ticker):
+    """% price change over the past month and year, None where history is too short."""
+    rows = get_daily_closes(ticker, adjusted=False)
+    if len(rows) < 2:
+        return {"1m": None, "1y": None}
+    end_date, end_close = rows[-1]
+
+    def since(days):
+        target = end_date - timedelta(days=days)
+        base = next((c for d, c in reversed(rows) if d <= target), None)
+        return round((end_close / base - 1) * 100, 1) if base else None
+
+    return {"1m": since(30), "1y": since(365)}
+
+
 def get_price_history(ticker, days=35):
     """Return a chart dict with date labels and sanitized closing prices."""
     try:

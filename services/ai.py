@@ -278,63 +278,133 @@ def get_trade_narrative(ticker, stock_data, fund_score, sent_signal,
 # ── Plain-English summary (the "Bottom Line" card) ────────────────────────────
 
 _PLAIN_FALLBACK = {
-    "headline":  "Summary unavailable",
-    "what_it_means": "We couldn't generate a plain-English summary for this ticker right now. "
-                     "The data below is still accurate.",
-    "bullets":   [],
-    "risk_level": "unknown",
+    "headline":            "Summary unavailable",
+    "what_it_means":       "We couldn't generate a plain-English summary for this ticker right now. "
+                           "The data below is still accurate.",
+    "what_it_means_parts": [],
+    "bullets":             [],
+    "risk_level":          "unknown",
+    "risk_sources":        [],
+    "facts":               [],
 }
 
 
-def get_plain_english_summary(ticker, stock_data, sentiment, earnings_summary):
-    """Explain the stock to someone with no finance background.
+def _summary_facts(ticker, s, headlines, changes):
+    """The facts the summary may draw on, numbered in the prompt so it can cite them.
 
-    Returns {headline, what_it_means, bullets[3], risk_level}. Never raises —
-    returns a safe placeholder so the card degrades instead of breaking the page.
+    Market data first, then the day's headlines. Each fact carries what the page
+    needs to show it as a source.
     """
-    s  = stock_data
-    of = s.get("options_flow") or {}
+    facts = []
 
-    facts = (
-        f"Company: {s.get('name')} ({ticker})\n"
-        f"Share price: ${s.get('price')} ({'up' if _num(s.get('change_pct')) >= 0 else 'down'} "
-        f"{abs(_num(s.get('change_pct')))}% today)\n"
-        f"Company size (market cap): {s.get('market_cap')}\n"
-        f"P/E ratio: {s.get('pe_ratio')}\n"
-        f"52-week range: ${s.get('week_52_low')} to ${s.get('week_52_high')}\n"
-        f"Profit margin: {s.get('profit_margin')}%\n"
-        f"Revenue growth: {s.get('revenue_growth')}%\n"
-        f"Sector: {s.get('sector')}\n"
-        f"Options traders lean: {of.get('sentiment', 'N/A')}\n"
-        f"News sentiment score (0-100): {(sentiment or {}).get('score')}\n"
-        f"Recent news analysis: {earnings_summary}"
-    )
+    def data(label, value, source="Yahoo Finance"):
+        if value not in (None, "", "N/A"):
+            facts.append({"kind": "data", "label": label, "value": str(value), "source": source})
+
+    def num(key):
+        v = s.get(key)
+        return float(v) if isinstance(v, (int, float)) else None
+
+    def signed(v, unit="%"):
+        return None if v is None else f"{'+' if v >= 0 else '−'}{abs(v):.1f}{unit}"
+
+    price, chg = num("price"), num("change_pct")
+    if price is not None:
+        data("Share price", f"${price:,.2f}" + (f", {signed(chg)} today" if chg is not None else ""))
+    data("Price change over the past month", signed((changes or {}).get("1m")))
+    data("Price change over the past year", signed((changes or {}).get("1y")))
+    data("Company size (total market value)", s.get("market_cap"))
+    pe, fpe = num("pe_ratio"), num("forward_pe")
+    data("P/E ratio (share price ÷ last year's profit per share)", f"{pe:.1f}" if pe else None)
+    data("Forward P/E (share price ÷ next year's expected profit per share)", f"{fpe:.1f}" if fpe else None)
+    lo, hi = num("week_52_low"), num("week_52_high")
+    if lo is not None and hi is not None:
+        data("Lowest and highest price in the past year", f"${lo:,.2f} to ${hi:,.2f}")
+    pm = num("profit_margin")
+    data("Profit margin (share of sales kept as profit)", f"{pm:.1f}%" if pm is not None else None)
+    data("Sales growth vs. a year earlier", signed(num("revenue_growth")))
+    data("Profit growth vs. a year earlier", signed(num("earnings_growth")))
+    beta = num("beta")
+    data("Beta (how much it swings vs. the whole market; 1.0 = the same)", f"{beta:.2f}" if beta is not None else None)
+    dy = num("dividend_yield")
+    data("Dividend yield (cash paid to shareholders each year)", f"{dy:.2f}%" if dy else None)
+    data("Industry", " / ".join(x for x in (s.get("sector"), s.get("industry")) if x) or None)
+    of = s.get("options_flow") or {}
+    if of.get("sentiment"):
+        data("Options traders' lean", f"{of['sentiment']} (put/call ratio {of.get('ratio')})",
+             source="Options market via Yahoo Finance")
+
+    for h in (headlines or [])[:8]:
+        if h.get("title"):
+            facts.append({"kind": "news", "title": h["title"], "source": h.get("source") or "News",
+                          "url": h.get("url") or "", "published_at": h.get("published_at") or ""})
+    return facts
+
+
+def _cited(raw, n):
+    """Validated 0-based fact indices from the model's 1-based citations."""
+    out = []
+    for s in raw or []:
+        if str(s).isdigit() and 1 <= int(s) <= n and int(s) - 1 not in out:
+            out.append(int(s) - 1)
+    return out
+
+
+def get_plain_english_summary(ticker, stock_data, headlines, price_changes=None):
+    """Explain the stock to someone with no finance background, citing its sources.
+
+    Returns {headline, what_it_means, what_it_means_parts[{text, sources}],
+    bullets[{text, sources}], risk_level, risk_sources, facts}. `sources` are
+    indices into `facts`. Never raises — returns a safe placeholder so the card
+    degrades instead of breaking the page.
+    """
+    facts = _summary_facts(ticker, stock_data, headlines, price_changes)
+    lines = [f"Company: {stock_data.get('name')} ({ticker})", "", "Facts:"]
+    for i, f in enumerate(facts, 1):
+        if f["kind"] == "data":
+            lines.append(f"[{i}] {f['label']}: {f['value']}")
+        else:
+            lines.append(f"[{i}] News headline, {f['published_at']}: \"{f['title']}\" ({f['source']})")
 
     try:
         client = _client()
         resp   = client.messages.create(
             model=MODEL,
-            max_tokens=700,
+            max_tokens=900,
             system=(
                 "You explain stocks to people who know nothing about finance — smart "
                 "adults who have never bought a share and do not know what a P/E ratio is.\n\n"
-                "Output ONLY a valid JSON object with exactly these four fields:\n"
+                "You get numbered facts: market data and recent news headlines. "
+                "Output ONLY a valid JSON object with exactly these fields:\n"
                 '  "headline": a 6-10 word plain-English take on how this company is doing. '
                 'No jargon. Example: "A healthy giant having a rough month."\n'
-                '  "what_it_means": 2-3 sentences explaining what is going on with this '
+                '  "what_it_means": an array of 2-3 objects, each {"text": one sentence, '
+                '"sources": [fact numbers]}. Together they explain what is going on with this '
                 "company in everyday language. Explain any necessary concept inline using a "
                 "concrete comparison. Never use an unexplained finance term.\n"
-                '  "bullets": an array of exactly 3 short strings. Each is one plain-English '
-                "takeaway (max 14 words). Cover roughly: how the business itself is doing, "
-                "what the stock price has been doing, and the single biggest thing to watch.\n"
+                '  "bullets": an array of exactly 3 objects, each {"text": one plain-English '
+                'takeaway of at most 14 words, "sources": [fact numbers]}. Cover roughly: how the '
+                "business itself is doing, what the stock price has been doing, and the single "
+                "biggest thing to watch.\n"
                 '  "risk_level": exactly one of "lower", "medium", or "higher" — how bumpy '
-                "this stock is likely to be for a beginner.\n\n"
-                "Rules: write like you are explaining to a friend over coffee. Use short "
-                "sentences. Never say 'bullish', 'bearish', 'valuation', 'multiple', "
-                "'headwinds', or 'fundamentals' without explaining them. Do not give buy or "
-                "sell advice. No markdown, no code fences, no text outside the JSON object."
+                "this stock is likely to be for a beginner.\n"
+                '  "risk_sources": [fact numbers] behind the risk level.\n\n'
+                "Rules:\n"
+                "- Every claim about this company must come from the facts, and every sentence "
+                "and bullet must cite the facts it relies on. Explaining a general concept (what "
+                "a profit margin is) needs no citation. Do not use outside knowledge about the "
+                "company, its products, its leaders or events.\n"
+                "- Cite only facts that actually support the sentence.\n"
+                "- The price range covers the past year only; its top is a one-year high, not "
+                "an all-time high.\n"
+                "- Headlines are what journalists wrote: attribute opinions and predictions "
+                "instead of stating them as fact.\n"
+                "- Write like you are explaining to a friend over coffee. Use short sentences. "
+                "Never say 'bullish', 'bearish', 'valuation', 'multiple', 'headwinds', or "
+                "'fundamentals' without explaining them. Do not give buy or sell advice.\n"
+                "- No markdown, no code fences, no text outside the JSON object."
             ),
-            messages=[{"role": "user", "content": facts}],
+            messages=[{"role": "user", "content": "\n".join(lines)}],
         )
 
         text = resp.content[0].text.strip()
@@ -342,13 +412,24 @@ def get_plain_english_summary(ticker, stock_data, sentiment, earnings_summary):
             text = text.split("```")[1].lstrip("json").strip()
         parsed = json.loads(text)
 
-        bullets = [str(b) for b in (parsed.get("bullets") or [])][:3]
+        def parts(items, limit):
+            out = []
+            for item in (items or [])[:limit]:
+                if isinstance(item, dict) and str(item.get("text") or "").strip():
+                    out.append({"text": str(item["text"]).strip(),
+                                "sources": _cited(item.get("sources"), len(facts))})
+            return out
+
+        meaning = parts(parsed.get("what_it_means"), 3)
         risk    = str(parsed.get("risk_level", "medium")).lower()
         return {
-            "headline":      str(parsed.get("headline") or _PLAIN_FALLBACK["headline"]),
-            "what_it_means": str(parsed.get("what_it_means") or ""),
-            "bullets":       bullets,
-            "risk_level":    risk if risk in ("lower", "medium", "higher") else "medium",
+            "headline":            str(parsed.get("headline") or _PLAIN_FALLBACK["headline"]),
+            "what_it_means":       " ".join(p["text"] for p in meaning),
+            "what_it_means_parts": meaning,
+            "bullets":             parts(parsed.get("bullets"), 3),
+            "risk_level":          risk if risk in ("lower", "medium", "higher") else "medium",
+            "risk_sources":        _cited(parsed.get("risk_sources"), len(facts)),
+            "facts":               facts,
         }
     except Exception as exc:
         print(f"Plain-English summary error: {exc}")
