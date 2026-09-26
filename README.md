@@ -61,7 +61,7 @@ Open `http://localhost:5000`.
 
 | Method | Route | What it does |
 |---|---|---|
-| `POST` | `/api/analyze` | Full ticker analysis: stock + news + earnings summary + sentiment + probability + AI verdict + plain-English summary |
+| `POST` | `/api/analyze` | Full ticker analysis: stock + news + earnings summary + sentiment + probability + AI verdict + plain-English summary. Fans the work out across three dependency stages, so the four Claude calls overlap instead of queueing (~25s → ~12s). |
 | `POST` | `/api/analyze-trade` | Trade Analyzer: optional chart image (Claude Vision) + position math + final recommendation |
 | `GET`  | `/api/kalshi-opportunities` | 50 live Kalshi markets categorized + sorted by edge |
 | `GET`  | `/api/indices?tickers=A,B,C` | Live S&P/NASDAQ/DOW + watchlist quotes for the ticker tape |

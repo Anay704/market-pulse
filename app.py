@@ -2,6 +2,7 @@
 
 import math
 import os
+from concurrent.futures import ThreadPoolExecutor
 
 from dotenv import load_dotenv
 load_dotenv(override=True)   # force .env values to win over shell env
@@ -97,17 +98,37 @@ def analyze():
         if not ticker:
             return ok({"error": "Ticker symbol is required"}, 400)
 
-        stock = get_stock_data(ticker)
-        if "error" in stock:
-            return ok(stock, 404)
-        chart = get_price_history(ticker)
+        # Three dependency stages, each fanned out. Run serially this takes ~25s
+        # because every Claude call waits on the previous one; the only real
+        # ordering constraints are the data dependencies below.
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            # Stage 1 — independent fetches.
+            f_stock = pool.submit(get_stock_data, ticker)
+            f_chart = pool.submit(get_price_history, ticker)
+            f_news  = pool.submit(get_news_headlines, ticker)
 
-        headlines, news_src = get_news_headlines(ticker)   # rich list[dict]
-        titles              = extract_titles(headlines)     # strings for AI calls
-        earnings            = get_earnings_summary(ticker, titles)
-        markets, mkt_src    = get_prediction_markets(ticker, stock["name"])
-        sentiment           = get_sentiment_score(ticker, stock, titles)
-        plain               = get_plain_english_summary(ticker, stock, sentiment, earnings)
+            stock = f_stock.result()
+            if "error" in stock:
+                return ok(stock, 404)
+            chart               = f_chart.result()
+            headlines, news_src = f_news.result()
+            titles              = extract_titles(headlines)   # strings for AI calls
+
+            # Stage 2 — needs stock and/or headlines.
+            f_earnings  = pool.submit(get_earnings_summary, ticker, titles)
+            f_markets   = pool.submit(get_prediction_markets, ticker, stock["name"])
+            f_sentiment = pool.submit(get_sentiment_score, ticker, stock, titles)
+
+            earnings         = f_earnings.result()
+            markets, mkt_src = f_markets.result()
+            sentiment        = f_sentiment.result()
+
+            # Stage 3 — needs the stage-2 results.
+            f_verdict = pool.submit(get_analyst_verdict, stock, earnings, markets)
+            f_plain   = pool.submit(get_plain_english_summary,
+                                    ticker, stock, sentiment, earnings)
+            verdict = f_verdict.result()
+            plain   = f_plain.result()
 
         prob = calculate_event_probability(
             stock, stock.get("options_flow"),
@@ -126,7 +147,7 @@ def analyze():
             "news_source":   news_src,
             "sentiment":     sentiment,
             "probability":   prob,
-            "verdict":       get_analyst_verdict(stock, earnings, markets),
+            "verdict":       verdict,
             "plain":         plain,
         })
     except Exception as exc:
