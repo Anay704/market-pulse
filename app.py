@@ -30,6 +30,7 @@ from services.stock import get_price_history, get_stock_data
 from services.trade_analyzer import (calculate_combined_score,
                                       calculate_suggested_action,
                                       get_trade_recommendation)
+from services.whatif import get_what_if
 
 app = Flask(__name__)
 
@@ -282,6 +283,22 @@ def earnings_single_route(ticker):
     except Exception as exc:
         print(f"/api/earnings/{ticker} error: {exc}")
         return ok({"earnings": None})
+
+
+@app.route("/api/whatif/<ticker>", methods=["GET"])
+def whatif_route(ticker):
+    """Growth of money invested in *ticker* over 1/3/5/10 years vs. the S&P 500."""
+    try:
+        ticker = (ticker or "").upper().strip()
+        if not ticker:
+            return ok({"error": "Ticker symbol is required"}, 400)
+        result = get_what_if(ticker)
+        if not result["default_period"]:
+            return ok({"error": "Not enough price history", "ticker": ticker}, 404)
+        return ok(result)
+    except Exception as exc:
+        print(f"/api/whatif/{ticker} error: {exc}")
+        return ok({"error": str(exc)}, 500)
 
 
 @app.route("/api/symbols", methods=["GET"])
