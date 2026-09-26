@@ -4,13 +4,9 @@
 # Everything is expressed as growth of $1, so the page can rescale to any amount
 # the reader types without another request.
 
-import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta
 
-import yfinance as yf
-
-from services.stock import sanitize_number
+from services.stock import get_daily_closes
 
 BENCHMARK = "SPY"
 PERIODS   = (("1y", 1), ("3y", 3), ("5y", 5), ("10y", 10))
@@ -22,28 +18,6 @@ _COVERAGE = 0.97
 # a few months of history to say anything.
 _MIN_FALLBACK_ROWS = 60
 _CHART_POINTS      = 160
-
-_CACHE_TTL = 900
-_CACHE     = {}
-
-
-def _daily_closes(ticker):
-    """[(date, close)] of ~10 years of dividend-adjusted daily closes, oldest first."""
-    hit = _CACHE.get(ticker)
-    if hit and time.time() - hit[0] < _CACHE_TTL:
-        return hit[1]
-
-    start = datetime.now() - timedelta(days=int(365.25 * 10) + 7)
-    hist  = yf.Ticker(ticker).history(start=start, auto_adjust=True)
-    rows  = []
-    for ts, close in zip(hist.index, hist["Close"].tolist()):
-        c = sanitize_number(close)
-        if c and c > 0:
-            rows.append((ts.date(), c))
-
-    if rows:   # don't pin a transient fetch failure for 15 minutes
-        _CACHE[ticker] = (time.time(), rows)
-    return rows
 
 
 def _years_before(d, years):
@@ -159,8 +133,8 @@ def get_what_if(ticker):
     use_bench = ticker != BENCHMARK
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_rows  = pool.submit(_daily_closes, ticker)
-        f_bench = pool.submit(_daily_closes, BENCHMARK) if use_bench else None
+        f_rows  = pool.submit(get_daily_closes, ticker)
+        f_bench = pool.submit(get_daily_closes, BENCHMARK) if use_bench else None
         rows       = f_rows.result()
         bench_rows = f_bench.result() if f_bench else []
 

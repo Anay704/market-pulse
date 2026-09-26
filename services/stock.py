@@ -1,6 +1,7 @@
 # Stock price, fundamentals, price history, and options flow via yfinance.
 
 import math
+import time
 from datetime import datetime, timedelta
 
 import yfinance as yf
@@ -166,6 +167,39 @@ def get_stock_data(ticker):
     except Exception as exc:
         print(f"Stock data error: {exc}")
         return {"error": f"Stock data error: {exc}"}
+
+
+_DAILY_CACHE_TTL = 900
+_DAILY_CACHE     = {}
+
+
+def get_daily_closes(ticker, adjusted=True):
+    """[(date, close)] for ~10 years of daily closes, oldest first.
+
+    *adjusted* folds dividends back into past prices, which is right for
+    growth-of-money maths; the raw close is what the stock actually traded at,
+    which is right for a price chart. Both come from one download, cached 15 min.
+    """
+    ticker = ticker.upper()
+    hit = _DAILY_CACHE.get(ticker)
+    if not hit or time.time() - hit[0] >= _DAILY_CACHE_TTL:
+        start = datetime.now() - timedelta(days=int(365.25 * 10) + 7)
+        hist  = yf.Ticker(ticker).history(start=start, auto_adjust=False)
+        if hist.empty:
+            return []
+        adj  = hist["Adj Close"] if "Adj Close" in hist else hist["Close"]
+        rows = []
+        for ts, close, adj_close in zip(hist.index, hist["Close"].tolist(), adj.tolist()):
+            c, a = sanitize_number(close), sanitize_number(adj_close)
+            if c and c > 0 and a and a > 0:
+                rows.append((ts.date(), c, a))
+        if not rows:   # don't pin a transient fetch failure for 15 minutes
+            return []
+        hit = (time.time(), rows)
+        _DAILY_CACHE[ticker] = hit
+
+    col = 2 if adjusted else 1
+    return [(r[0], r[col]) for r in hit[1]]
 
 
 def get_price_history(ticker, days=35):
