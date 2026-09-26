@@ -565,6 +565,51 @@
     .stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
     .chart-wrap { position: relative; height: 140px; }
 
+    /* ── "The bottom line" card ───────────────────────────────────────────── */
+    .bottom-line {
+      background: linear-gradient(160deg, var(--bg-cta), var(--bg-card) 65%);
+      border: 1px solid var(--accent-dark);
+      border-radius: 16px;
+      padding: 24px 26px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .bottom-line.visible { display: block; }
+    .bl-eyebrow {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .bl-headline {
+      font-size: 25px; font-weight: 700; line-height: 1.28;
+      letter-spacing: -0.6px; color: var(--text);
+      margin-bottom: 12px;
+    }
+    .bl-body { font-size: 14.5px; line-height: 1.75; color: var(--text-2); margin-bottom: 20px; }
+    .bl-bullets { display: grid; gap: 10px; margin-bottom: 18px; }
+    .bl-bullet {
+      display: flex; gap: 10px; align-items: flex-start;
+      font-size: 13.5px; line-height: 1.6; color: var(--text-2);
+    }
+    .bl-bullet .bl-dot {
+      color: var(--accent); font-size: 15px; line-height: 1.35; flex-shrink: 0;
+    }
+    .bl-foot {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+      border-top: 1px solid var(--border); padding-top: 15px;
+      font-size: 11.5px; color: var(--text-3);
+    }
+    .bl-risk { font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 100px; }
+    .bl-risk.lower   { background: rgba(110,231,176,0.13); color: var(--positive); }
+    .bl-risk.medium  { background: rgba(245,192,96,0.13);  color: var(--warning); }
+    .bl-risk.higher  { background: rgba(244,113,116,0.13); color: var(--negative); }
+    .bl-risk.unknown { background: var(--bg-elev); color: var(--text-3); }
+    @media (max-width: 700px) {
+      .bottom-line { padding: 20px 18px; }
+      .bl-headline { font-size: 20px; }
+    }
+
     .earnings-body { font-size: 13px; line-height: 1.9; color: var(--text-2); white-space: pre-wrap; }
     .section-num { color: var(--accent); font-weight: 700; }
 
@@ -1445,6 +1490,17 @@
         </div>
       </div>
 
+      <div class="bottom-line fade-in" id="bottom-line">
+        <div class="bl-eyebrow"><span>◈</span><span>The bottom line</span></div>
+        <div class="bl-headline" id="bl-headline">—</div>
+        <div class="bl-body" id="bl-body"></div>
+        <div class="bl-bullets" id="bl-bullets"></div>
+        <div class="bl-foot">
+          <span class="bl-risk unknown" id="bl-risk">—</span>
+          <span id="bl-risk-note"></span>
+        </div>
+      </div>
+
       <div class="panels">
         <div class="card">
           <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-stock"></div><span class="card-label">Stock Data</span></div></div>
@@ -2054,6 +2110,7 @@ const MAIN_STEPS = [[0,'Fetching market data…'],[1,'Analyzing headlines…'],[
 function skelPara(w='90%') { return `<div class="skeleton skel-para" style="width:${w}"></div>`; }
 function showSkeletons() {
   ['d-mktcap','d-pe','d-high','d-low','d-pcratio','d-optflow'].forEach(id => document.getElementById(id).innerHTML = '<span class="skeleton skel-num">&nbsp;</span>');
+  document.getElementById('bottom-line').classList.remove('visible');
   document.getElementById('d-earnings').innerHTML = skelPara('95%')+skelPara('78%')+skelPara('88%')+skelPara('60%');
   document.getElementById('d-kalshi').innerHTML = '<div style="padding:4px 0">'+skelPara('90%')+skelPara('70%')+skelPara('80%')+'</div>';
   document.getElementById('d-verdict').innerHTML = '<div style="padding:20px">'+skelPara('95%')+skelPara('82%')+skelPara('68%')+'</div>';
@@ -2145,6 +2202,7 @@ function populate(data) {
   document.getElementById('d-high').textContent = stock.week_52_high != null ? '$' + stock.week_52_high : 'N/A';
   document.getElementById('d-low').textContent  = stock.week_52_low  != null ? '$' + stock.week_52_low  : 'N/A';
   renderOptionsFlow(stock.options_flow);
+  renderBottomLine(data.plain);
   if (cd && cd.prices && cd.prices.length) renderChart(cd, stock.change_pct >= 0);
   document.getElementById('d-earnings').innerHTML = formatEarnings(earnings || 'No data available.');
   document.getElementById('d-news-src').textContent = news_source && news_source !== 'none' ? '· ' + news_source : '';
@@ -2199,6 +2257,35 @@ function renderNews(news, source) {
     const meta = `<span class="ni-source">${escHtml(n.source || 'Unknown')}</span>${n.published_at ? `<span class="ni-dot">·</span>${escHtml(n.published_at)}` : ''}`;
     return `<a class="news-item" ${href}><div class="news-item-title">${escHtml(n.title)}</div><div class="news-item-meta">${meta}</div>${desc}</a>`;
   }).join('');
+}
+
+const RISK_NOTE = {
+  lower:   'Tends to move less than the average stock.',
+  medium:  'Moves roughly as much as the market overall.',
+  higher:  'Can swing sharply in both directions.',
+  unknown: '',
+};
+
+/** Render the plain-English "bottom line" card above the data panels. */
+function renderBottomLine(plain) {
+  const card = document.getElementById('bottom-line');
+  if (!plain || !plain.headline) { card.classList.remove('visible'); return; }
+
+  document.getElementById('bl-headline').textContent = plain.headline;
+  document.getElementById('bl-body').textContent     = plain.what_it_means || '';
+
+  const bullets = Array.isArray(plain.bullets) ? plain.bullets : [];
+  document.getElementById('bl-bullets').innerHTML = bullets
+    .map(b => `<div class="bl-bullet"><span class="bl-dot">▸</span><span>${escHtml(b)}</span></div>`)
+    .join('');
+
+  const risk = ['lower','medium','higher'].includes(plain.risk_level) ? plain.risk_level : 'unknown';
+  const riskEl = document.getElementById('bl-risk');
+  riskEl.className = 'bl-risk ' + risk;
+  riskEl.textContent = risk === 'unknown' ? 'Risk unrated' : risk.toUpperCase() + ' RISK';
+  document.getElementById('bl-risk-note').textContent = RISK_NOTE[risk];
+
+  card.classList.add('visible');
 }
 
 function probColor(p) { if (p < 40) return 'var(--negative)'; if (p < 60) return 'var(--warning)'; return 'var(--positive)'; }

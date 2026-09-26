@@ -17,6 +17,14 @@ def _client():
     return anthropic.Anthropic(api_key=api_key)
 
 
+def _num(value, default=0.0):
+    """Coerce a possibly-missing/None numeric field to a float for prompt text."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 # ── Earnings summary ───────────────────────────────────────────────────────────
 
 def get_earnings_summary(ticker, headlines):
@@ -263,6 +271,86 @@ def get_trade_narrative(ticker, stock_data, fund_score, sent_signal,
         return resp.content[0].text
     except Exception as exc:
         return f"Narrative unavailable: {exc}"
+
+
+# ── Plain-English summary (the "Bottom Line" card) ────────────────────────────
+
+_PLAIN_FALLBACK = {
+    "headline":  "Summary unavailable",
+    "what_it_means": "We couldn't generate a plain-English summary for this ticker right now. "
+                     "The data below is still accurate.",
+    "bullets":   [],
+    "risk_level": "unknown",
+}
+
+
+def get_plain_english_summary(ticker, stock_data, sentiment, earnings_summary):
+    """Explain the stock to someone with no finance background.
+
+    Returns {headline, what_it_means, bullets[3], risk_level}. Never raises —
+    returns a safe placeholder so the card degrades instead of breaking the page.
+    """
+    s  = stock_data
+    of = s.get("options_flow") or {}
+
+    facts = (
+        f"Company: {s.get('name')} ({ticker})\n"
+        f"Share price: ${s.get('price')} ({'up' if _num(s.get('change_pct')) >= 0 else 'down'} "
+        f"{abs(_num(s.get('change_pct')))}% today)\n"
+        f"Company size (market cap): {s.get('market_cap')}\n"
+        f"P/E ratio: {s.get('pe_ratio')}\n"
+        f"52-week range: ${s.get('week_52_low')} to ${s.get('week_52_high')}\n"
+        f"Profit margin: {s.get('profit_margin')}%\n"
+        f"Revenue growth: {s.get('revenue_growth')}%\n"
+        f"Sector: {s.get('sector')}\n"
+        f"Options traders lean: {of.get('sentiment', 'N/A')}\n"
+        f"News sentiment score (0-100): {(sentiment or {}).get('score')}\n"
+        f"Recent news analysis: {earnings_summary}"
+    )
+
+    try:
+        client = _client()
+        resp   = client.messages.create(
+            model=MODEL,
+            max_tokens=700,
+            system=(
+                "You explain stocks to people who know nothing about finance — smart "
+                "adults who have never bought a share and do not know what a P/E ratio is.\n\n"
+                "Output ONLY a valid JSON object with exactly these four fields:\n"
+                '  "headline": a 6-10 word plain-English take on how this company is doing. '
+                'No jargon. Example: "A healthy giant having a rough month."\n'
+                '  "what_it_means": 2-3 sentences explaining what is going on with this '
+                "company in everyday language. Explain any necessary concept inline using a "
+                "concrete comparison. Never use an unexplained finance term.\n"
+                '  "bullets": an array of exactly 3 short strings. Each is one plain-English '
+                "takeaway (max 14 words). Cover roughly: how the business itself is doing, "
+                "what the stock price has been doing, and the single biggest thing to watch.\n"
+                '  "risk_level": exactly one of "lower", "medium", or "higher" — how bumpy '
+                "this stock is likely to be for a beginner.\n\n"
+                "Rules: write like you are explaining to a friend over coffee. Use short "
+                "sentences. Never say 'bullish', 'bearish', 'valuation', 'multiple', "
+                "'headwinds', or 'fundamentals' without explaining them. Do not give buy or "
+                "sell advice. No markdown, no code fences, no text outside the JSON object."
+            ),
+            messages=[{"role": "user", "content": facts}],
+        )
+
+        text = resp.content[0].text.strip()
+        if "```" in text:
+            text = text.split("```")[1].lstrip("json").strip()
+        parsed = json.loads(text)
+
+        bullets = [str(b) for b in (parsed.get("bullets") or [])][:3]
+        risk    = str(parsed.get("risk_level", "medium")).lower()
+        return {
+            "headline":      str(parsed.get("headline") or _PLAIN_FALLBACK["headline"]),
+            "what_it_means": str(parsed.get("what_it_means") or ""),
+            "bullets":       bullets,
+            "risk_level":    risk if risk in ("lower", "medium", "higher") else "medium",
+        }
+    except Exception as exc:
+        print(f"Plain-English summary error: {exc}")
+        return dict(_PLAIN_FALLBACK)
 
 
 # ── Research-report synthesis (used by /api/research) ─────────────────────────

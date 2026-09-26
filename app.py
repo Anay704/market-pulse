@@ -10,9 +10,9 @@ from flask import Flask, jsonify, render_template, request
 
 from services.ai import (analyze_chart_image, get_analyst_verdict,
                           get_company_summary, get_earnings_summary,
-                          get_financial_commentary, get_red_green_flags,
-                          get_risk_commentary, get_sentiment_score,
-                          get_trade_narrative)
+                          get_financial_commentary, get_plain_english_summary,
+                          get_red_green_flags, get_risk_commentary,
+                          get_sentiment_score, get_trade_narrative)
 from services.chat import chat_about_ticker
 from services.earnings import get_earnings_for_watchlist, get_next_earnings
 from services.indices import get_indices, get_quote_strip
@@ -107,6 +107,7 @@ def analyze():
         earnings            = get_earnings_summary(ticker, titles)
         markets, mkt_src    = get_prediction_markets(ticker, stock["name"])
         sentiment           = get_sentiment_score(ticker, stock, titles)
+        plain               = get_plain_english_summary(ticker, stock, sentiment, earnings)
 
         prob = calculate_event_probability(
             stock, stock.get("options_flow"),
@@ -126,6 +127,7 @@ def analyze():
             "sentiment":     sentiment,
             "probability":   prob,
             "verdict":       get_analyst_verdict(stock, earnings, markets),
+            "plain":         plain,
         })
     except Exception as exc:
         print(f"/api/analyze error: {exc}")
