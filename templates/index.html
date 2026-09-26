@@ -756,6 +756,58 @@
       .wi-foot { padding: 0 18px 14px; }
     }
 
+    /* ── "Why did it move?" card ──────────────────────────────────────────── */
+    .moves {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .moves.visible { display: block; }
+    .mv-body { padding: 18px 24px 20px; }
+    .mv-chart { position: relative; height: 230px; }
+    .mv-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 14px; }
+    .mv-chips:empty { display: none; }
+    .mv-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      font-size: 11.5px; font-weight: 500;
+      padding: 6px 11px; border-radius: 100px;
+      cursor: pointer; transition: all .15s;
+    }
+    .mv-chip:hover { border-color: var(--border-strong); color: var(--text); }
+    .mv-chip.on { border-color: var(--accent-dark); background: var(--accent-soft); color: var(--text); }
+    .mv-chip-date { color: var(--text-3); }
+    .mv-pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .mv-pct.up   { color: var(--positive); }
+    .mv-pct.down { color: var(--negative); }
+    .mv-detail {
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+    .mv-detail-hdr { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; }
+    .mv-detail-label { font-size: 16px; font-weight: 700; color: var(--text); }
+    .mv-detail-meta { font-size: 12px; color: var(--text-3); }
+    .mv-expl { font-size: 14px; line-height: 1.7; color: var(--text-2); }
+    .mv-src-lbl {
+      font-size: 10px; font-weight: 700; color: var(--text-3);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin: 14px 0 6px;
+    }
+    .mv-srcs { list-style: none; display: grid; gap: 6px; }
+    .mv-srcs a { color: var(--text); font-size: 12.5px; line-height: 1.5; text-decoration: none; }
+    .mv-srcs a:hover { color: var(--accent); text-decoration: underline; }
+    .mv-src-meta { margin-left: 6px; font-size: 11.5px; color: var(--text-3); }
+    @media (max-width: 700px) {
+      .mv-body { padding: 16px 18px 18px; }
+      .mv-chart { height: 190px; }
+    }
+
     .earnings-body { font-size: 13px; line-height: 1.9; color: var(--text-2); white-space: pre-wrap; }
     .section-num { color: var(--accent); font-weight: 700; }
 
@@ -1696,6 +1748,17 @@
         <div class="wi-foot" id="wi-foot"></div>
       </div>
 
+      <div class="moves fade-in" id="moves">
+        <div class="card-hdr">
+          <div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label">Why did it move?</span><span class="src-tag" id="mv-sub"></span></div>
+        </div>
+        <div class="mv-body">
+          <div class="mv-chart"><canvas id="movesChart"></canvas></div>
+          <div class="mv-chips" id="mv-chips"></div>
+          <div class="mv-detail" id="mv-detail"></div>
+        </div>
+      </div>
+
       <div class="panels">
         <div class="card">
           <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-stock"></div><span class="card-label">Stock Data</span></div></div>
@@ -2541,14 +2604,16 @@ async function runSingle(ticker, { push = true } = {}) {
   document.getElementById('d-change').textContent = '';
   showSkeletons();
   hideWhatIf();
+  hideMoves();
   updateStarButton(ticker);
 
   setLoading(true);
   const animId = startLoadingAnim(MAIN_STEPS);
   if (push) history.pushState({ ticker }, '', `?q=${ticker}`);
-  // Runs alongside the (much slower) analysis; rendered once that lands so the
-  // card can use the company name.
+  // Run alongside the (slower) analysis and render once it lands, so the cards
+  // appear with the rest of the dashboard rather than ahead of it.
   const whatIfReq = fetchWhatIf(ticker, currentController.signal);
+  const movesReq  = fetchMoves(ticker, currentController.signal);
   try {
     const data = await fetchTicker(ticker, currentController.signal);
     if (data.error) throw new Error(data.message || data.error);
@@ -2560,6 +2625,7 @@ async function runSingle(ticker, { push = true } = {}) {
     dash.scrollIntoView({ behavior:'smooth', block:'start' });
     loadEarningsBanner(ticker);
     whatIfReq.then(w => { if (lastAnalyzedTicker === ticker) renderWhatIf(w, data.stock.name); });
+    movesReq.then(m => { if (lastAnalyzedTicker === ticker) renderMoves(m); });
   } catch (err) {
     if (err.name === 'AbortError') return;
     showError(err.message); dash.classList.remove('visible'); lastAnalyzedTicker = null;
@@ -2876,6 +2942,195 @@ function drawWhatIfChart(p, amt, animate) {
   });
 }
 
+// ══════════════════════ WHY DID IT MOVE ══════════════════════
+// /api/moves returns ~3 months of closes plus the days that were unusually big
+// for this stock, each with a plain-English cause and the headlines it rests on.
+const mv = { data:null, selected:null };
+let movesChart = null;
+
+function fmtMovePct(p) { return (p > 0 ? '+' : p < 0 ? '−' : '') + Math.abs(p).toFixed(1) + '%'; }
+function fmtShortDay(iso) { return isoDate(iso).toLocaleDateString('en-US', { month:'short', day:'numeric' }); }
+function fmtWeekday(iso)  { return isoDate(iso).toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' }); }
+
+async function fetchMoves(ticker, signal) {
+  try {
+    const res = await fetch('/api/moves/' + encodeURIComponent(ticker), { signal });
+    return res.ok ? await res.json() : null;
+  } catch (_) { return null; }
+}
+
+function hideMoves() {
+  document.getElementById('moves').classList.remove('visible');
+  if (movesChart) { movesChart.destroy(); movesChart = null; }
+  mv.data = null;
+}
+
+function renderMoves(data) {
+  if (!data || !data.series || !data.series.dates.length) { hideMoves(); return; }
+  const moves = data.moves || [];
+  mv.data = data;
+  // Open on the most unusual day; the reader can pick any other.
+  mv.selected = moves.length
+    ? moves.reduce((best, m, i) => Math.abs(m.z) > Math.abs(moves[best].z) ? i : best, 0)
+    : null;
+
+  document.getElementById('mv-sub').textContent =
+    `· Last 3 months · a typical day moves about ±${data.typical_pct}%`;
+  document.getElementById('mv-chips').innerHTML = moves.map((m, i) =>
+    `<button type="button" class="mv-chip" data-i="${i}">`
+    + `<span class="mv-chip-date">${fmtShortDay(m.date)}</span>`
+    + `<span class="mv-pct ${m.change_pct >= 0 ? 'up' : 'down'}">${fmtMovePct(m.change_pct)}</span>`
+    + (m.label ? `<span>${escHtml(m.label)}</span>` : '')
+    + '</button>').join('');
+
+  document.getElementById('moves').classList.add('visible');
+  selectMove(mv.selected, true);
+}
+
+function selectMove(i, animate) {
+  mv.selected = i;
+  document.querySelectorAll('.mv-chip').forEach(c => c.classList.toggle('on', Number(c.dataset.i) === i));
+  // Restyle in place once the chart exists: this also runs from the chart's own
+  // click handler, and destroying a chart mid-event breaks Chart.js.
+  if (movesChart && !animate) { styleMoveMarkers(movesChart.data.datasets[0]); movesChart.update('none'); }
+  else drawMovesChart(animate);
+  renderMoveDetail();
+}
+
+/** Marker size/colour per point: rises green, drops red, the selected day ringed. */
+function styleMoveMarkers(ds) {
+  const moves = mv.data.moves || [], n = mv.data.series.prices.length;
+  const markerAt = new Map(moves.map((m, i) => [m.index, i]));
+  const at = (fn, other) => Array.from({ length: n }, (_, i) => markerAt.has(i) ? fn(markerAt.get(i)) : other);
+  ds.pointRadius          = at(k => k === mv.selected ? 7 : 5, 0);
+  ds.pointHoverRadius     = at(k => k === mv.selected ? 8 : 6, 3);
+  ds.pointBackgroundColor = at(k => moves[k].change_pct >= 0 ? '#6ee7b0' : '#f47174', '#5dbfa8');
+  ds.pointBorderColor     = at(k => k === mv.selected ? '#e7e9ec' : '#161b22', '#5dbfa8');
+  ds.pointBorderWidth     = at(k => k === mv.selected ? 2 : 1.5, 1);
+}
+
+function renderMoveDetail() {
+  const el = document.getElementById('mv-detail'), d = mv.data;
+  const m = d.moves[mv.selected];
+  if (!m) {
+    const b = d.biggest;
+    el.innerHTML = `<div class="mv-expl">Nothing unusual in the last 3 months: no day moved much more than normal for ${escHtml(d.ticker)}.`
+      + (b ? ` The biggest was ${fmtMovePct(b.change_pct)} on ${fmtShortDay(b.date)}.` : '') + '</div>';
+    return;
+  }
+
+  const mkt = m.market_change_pct == null ? 'Stock market closed that day'
+    : `S&P 500 that day: ${fmtMovePct(m.market_change_pct)}`;
+  const label = m.label || (m.change_pct >= 0 ? 'Big jump' : 'Big drop');
+  // With no explanation (the AI call failed), show the day's top headlines as-is.
+  const cited = m.explanation ? (m.sources || []) : [0, 1, 2];
+  const links = cited.map(i => m.headlines[i]).filter(Boolean).map(h => {
+    const href = /^https?:\/\//.test(h.url || '') ? h.url : null;
+    const title = escHtml(h.title);
+    return `<li>${href ? `<a href="${escHtml(href)}" target="_blank" rel="noopener noreferrer">${title}</a>` : title}`
+      + `<span class="mv-src-meta">${escHtml(h.source)}${h.published_at ? ' · ' + escHtml(h.published_at) : ''}</span></li>`;
+  }).join('');
+
+  el.innerHTML =
+    `<div class="mv-detail-hdr">`
+    + `<span class="mv-detail-label">${escHtml(label)}</span>`
+    + `<span class="mv-pct ${m.change_pct >= 0 ? 'up' : 'down'}">${fmtMovePct(m.change_pct)}</span>`
+    + `<span class="mv-detail-meta">${fmtWeekday(m.date)} · ${mkt}</span></div>`
+    + `<div class="mv-expl">${escHtml(m.explanation || 'We couldn’t work out an explanation for this day. Here’s what was in the news:')}</div>`
+    + (links ? `<div class="mv-src-lbl">${m.explanation ? 'Based on' : 'In the news'}</div><ul class="mv-srcs">${links}</ul>` : '');
+}
+
+// Draws the % change next to each marked day, above rises and below drops.
+// On a narrow chart close-together days collide, so labels are placed selected
+// day first, then biggest move first, skipping any that would overlap; every
+// day is still listed in the chips below.
+const moveLabelsPlugin = {
+  id: 'moveLabels',
+  afterDatasetsDraw(chart) {
+    const moves = mv.data ? mv.data.moves : [];
+    const points = chart.getDatasetMeta(0).data, ctx = chart.ctx;
+    const order = moves.map((m, k) => k)
+      .sort((a, b) => (b === mv.selected) - (a === mv.selected) || Math.abs(moves[b].z) - Math.abs(moves[a].z));
+    const placed = [];
+    ctx.save();
+    ctx.font = '700 10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    order.forEach(k => {
+      const m = moves[k], pt = points[m.index];
+      if (!pt) return;
+      const text = fmtMovePct(m.change_pct), up = m.change_pct >= 0;
+      const w = ctx.measureText(text).width + 4, h = 12;
+      const box = { x: pt.x - w / 2, y: (up ? pt.y - 16 : pt.y + 16) - h / 2, w, h };
+      if (placed.some(p => box.x < p.x + p.w && p.x < box.x + box.w && box.y < p.y + p.h && p.y < box.y + box.h)) return;
+      placed.push(box);
+      ctx.fillStyle = up ? '#6ee7b0' : '#f47174';
+      ctx.fillText(text, pt.x, box.y + h / 2);
+    });
+    ctx.restore();
+  },
+};
+
+function drawMovesChart(animate) {
+  if (movesChart) { movesChart.destroy(); movesChart = null; }
+  const d = mv.data, s = d.series, moves = d.moves || [];
+  const markerAt = new Map(moves.map((m, i) => [m.index, i]));
+  const ctx = document.getElementById('movesChart').getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 230);
+  grad.addColorStop(0, 'rgba(93,191,168,0.16)');
+  grad.addColorStop(1, 'rgba(10,14,20,0)');
+
+  // Nearest marked day within 3 trading days of a click, so small dots are easy to hit.
+  const nearestMove = idx => {
+    let best = null;
+    moves.forEach((m, k) => { const dist = Math.abs(m.index - idx); if (dist <= 3 && (!best || dist < best.dist)) best = { k, dist }; });
+    return best ? best.k : null;
+  };
+  const indexAt = (e, chart) => {
+    const pts = chart.getElementsAtEventForMode(e, 'nearest', { intersect:false, axis:'x' }, false);
+    return pts.length ? pts[0].index : null;
+  };
+
+  const dataset = { data: s.prices, borderColor:'#5dbfa8', backgroundColor:grad, borderWidth:2, fill:true, tension:0.2 };
+  styleMoveMarkers(dataset);
+
+  movesChart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: s.dates, datasets: [dataset] },
+    options: { responsive:true, maintainAspectRatio:false, animation: animate ? { duration:600 } : false,
+      layout: { padding: { top:20, bottom:4 } },
+      interaction: { mode:'index', intersect:false },
+      onClick: (e, _els, chart) => {
+        const idx = indexAt(e, chart), k = idx == null ? null : nearestMove(idx);
+        if (k != null && k !== mv.selected) selectMove(k, false);
+      },
+      onHover: (e, _els, chart) => {
+        const idx = indexAt(e, chart);
+        chart.canvas.style.cursor = idx != null && nearestMove(idx) != null ? 'pointer' : 'default';
+      },
+      plugins: { legend:{display:false},
+        tooltip: { backgroundColor:'#161b22', borderColor:'#2a3340', borderWidth:1, padding:9,
+          titleColor:'#8b95a3', bodyColor:'#e7e9ec', titleFont:{family:'Inter',size:10}, bodyFont:{family:'Inter',size:12,weight:'600'},
+          callbacks: {
+            title: items => fmtWeekday(items[0].label),
+            label: c => ` $${c.parsed.y.toFixed(2)}`,
+            afterLabel: c => {
+              const k = markerAt.get(c.dataIndex);
+              if (k == null) return '';
+              const m = moves[k];
+              return ` ${fmtMovePct(m.change_pct)} that day${m.label ? ' · ' + m.label : ''}`;
+            } } } },
+      scales: {
+        x: { grid:{display:false}, border:{display:false},
+             ticks:{ color:'#5d6571', font:{family:'Inter',size:9}, maxTicksLimit:6, maxRotation:0,
+                     callback(v) { return fmtShortDay(this.getLabelForValue(v)); } } },
+        y: { position:'right', grid:{color:'rgba(255,255,255,0.04)'}, border:{display:false},
+             ticks:{ color:'#5d6571', font:{family:'Inter',size:9}, maxTicksLimit:5,
+                     callback: v => Math.abs(v) >= 1e4 ? fmtUSDShort(v) : '$' + (Math.abs(v) < 10 ? v.toFixed(2) : Math.round(v)) } } } },
+    plugins: [moveLabelsPlugin],
+  });
+}
+
 function probColor(p) { if (p < 40) return 'var(--negative)'; if (p < 60) return 'var(--warning)'; return 'var(--positive)'; }
 function renderProbPanel(pd) {
   if (!pd) return;
@@ -3176,6 +3431,10 @@ wiAmountInput.addEventListener('blur', () => {
 });
 document.fonts.ready.then(fitAmountInput);
 wiAmountInput.addEventListener('keydown', e => { if (e.key === 'Enter') wiAmountInput.blur(); });
+document.getElementById('mv-chips').addEventListener('click', e => {
+  const chip = e.target.closest('.mv-chip');
+  if (chip && mv.data) selectMove(Number(chip.dataset.i), false);
+});
 // Paint the glossary labels once at startup, honouring the saved preference.
 setBeginnerMode(beginnerMode);
 
