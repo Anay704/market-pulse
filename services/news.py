@@ -3,7 +3,7 @@
 import os
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import requests
 
@@ -26,7 +26,7 @@ _NAME_NOISE = re.compile(
 _SEARCH_NAMES = None
 
 
-def _search_name(ticker):
+def short_company_name(ticker):
     """The name to search news for, or None for tickers outside the symbol list.
 
     Searching the bare ticker matches ordinary words and other languages —
@@ -68,7 +68,7 @@ def get_news_headlines(ticker):
         title, description, url, source, published_at
     """
     news_api_key = os.environ.get("NEWS_API_KEY")
-    subject      = _search_name(ticker) or ticker
+    subject      = short_company_name(ticker) or ticker
 
     # ── 1. NewsAPI ─────────────────────────────────────────────────────────────
     if news_api_key:
@@ -106,43 +106,79 @@ def get_news_headlines(ticker):
 
     # ── 2. Google News RSS fallback ────────────────────────────────────────────
     try:
-        r = requests.get(
-            "https://news.google.com/rss/search",
-            params={"q": f'"{subject}" stock', "hl": "en-US"},
-            headers={"User-Agent": "MarketPulse/1.0"},
-            timeout=8,
-        )
-        if r.status_code == 200:
-            root  = ET.fromstring(r.content)
-            items = []
-            for item in root.findall(".//item")[:8]:
-                t = item.find("title")
-                if t is None or not t.text:
-                    continue
-                link = item.find("link")
-                pub  = item.find("pubDate")
-                src  = item.find("source")
-                # Google often appends "- Source" to the title; split it out
-                title  = t.text
-                source = (src.text if src is not None else "Google News")
-                m = re.match(r"^(.*?)\s+-\s+([^-]+)$", title)
-                if m:
-                    title, maybe_src = m.group(1).strip(), m.group(2).strip()
-                    if src is None:
-                        source = maybe_src
-                items.append({
-                    "title":        title,
-                    "description":  "",
-                    "url":          link.text if link is not None else "",
-                    "source":       source,
-                    "published_at": _parse_iso(pub.text if pub is not None else ""),
-                })
-            if items:
-                return items, "Google News"
+        items = _google_news(f'"{subject}" stock')
+        if items:
+            return items, "Google News"
     except Exception as exc:
         print(f"Google News RSS error: {exc}")
 
     return [], "none"
+
+
+def get_headlines_around(ticker, day, limit=8):
+    """Headlines about *ticker* from the day before *day* through the day after.
+
+    A move on day D is usually explained by news from the evening before, that
+    morning, or the next day's "why it moved" write-ups. Uses Google News
+    because its date filters reach back further than NewsAPI's free tier.
+    """
+    subject = short_company_name(ticker) or ticker
+    keyword = "price" if ticker.upper().endswith("-USD") else "stock"
+    query   = (f'"{subject}" {keyword} after:{(day - timedelta(days=1)).isoformat()} '
+               f'before:{(day + timedelta(days=1)).isoformat()}')
+    try:
+        return _google_news(query, limit)
+    except Exception as exc:
+        print(f"Google News dated search error: {exc}")
+        return []
+
+
+def _google_news(query, limit=8):
+    """Up to *limit* Google News RSS results for *query*, as headline dicts."""
+    r = requests.get(
+        "https://news.google.com/rss/search",
+        params={"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"},
+        headers={"User-Agent": "MarketPulse/1.0"},
+        timeout=8,
+    )
+    if r.status_code != 200:
+        return []
+
+    items, seen = [], set()
+    for item in ET.fromstring(r.content).findall(".//item"):
+        t = item.find("title")
+        if t is None or not t.text:
+            continue
+        link = item.find("link")
+        pub  = item.find("pubDate")
+        src  = item.find("source")
+        # Google appends " - Source" to the title; split it out. Match the
+        # <source> name exactly first, since names like "coca-colacompany.com"
+        # contain hyphens the generic pattern can't split on.
+        title  = t.text
+        source = (src.text if src is not None and src.text else "Google News")
+        if src is not None and src.text and title.endswith(" - " + src.text):
+            title = title[: -len(src.text) - 3].strip()
+        else:
+            m = re.match(r"^(.*?)\s+-\s+([^-]+)$", title)
+            if m:
+                title, maybe_src = m.group(1).strip(), m.group(2).strip()
+                if src is None:
+                    source = maybe_src
+        # Syndicated stories show up once per outlet; keep the first.
+        if title.lower() in seen:
+            continue
+        seen.add(title.lower())
+        items.append({
+            "title":        title,
+            "description":  "",
+            "url":          link.text if link is not None else "",
+            "source":       source,
+            "published_at": _parse_iso(pub.text if pub is not None else ""),
+        })
+        if len(items) >= limit:
+            break
+    return items
 
 
 def extract_titles(headlines):
