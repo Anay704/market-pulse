@@ -565,6 +565,77 @@
     .stat-val { font-size: 14px; font-weight: 700; color: var(--text); }
     .chart-wrap { position: relative; height: 140px; }
 
+    /* ── Plain-English layer ──────────────────────────────────────────────── */
+
+    /* Any jargon term gets a dotted underline + tap/hover explanation. */
+    .term {
+      border-bottom: 1px dotted var(--text-3);
+      cursor: help;
+      position: relative;
+    }
+    .term:hover, .term:focus-visible { border-bottom-color: var(--accent); color: var(--accent); outline: none; }
+    .term .tip {
+      position: absolute; bottom: calc(100% + 8px); left: 0;
+      width: 250px; z-index: 500;
+      background: var(--bg-elev);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 10px 12px;
+      box-shadow: var(--shadow-lg);
+      font-size: 11.5px; font-weight: 400; line-height: 1.65;
+      color: var(--text-2);
+      text-transform: none; letter-spacing: 0;
+      opacity: 0; visibility: hidden; transform: translateY(4px);
+      transition: opacity .15s, transform .15s, visibility .15s;
+      pointer-events: none;
+      white-space: normal;
+    }
+    .term .tip strong { color: var(--text); display: block; margin-bottom: 3px; font-weight: 600; }
+    .term:hover .tip, .term:focus-visible .tip { opacity: 1; visibility: visible; transform: translateY(0); }
+    /* Flip near the right edge so the tooltip never leaves the viewport. */
+    .term.tip-right .tip { left: auto; right: 0; }
+
+    /* Good / average / watch-out verdict chips next to a number. */
+    .chip {
+      display: inline-block;
+      font-size: 9px; font-weight: 700;
+      letter-spacing: 0.04em;
+      padding: 2px 7px; border-radius: 100px;
+      margin-left: 6px;
+      vertical-align: middle;
+      text-transform: none;
+      white-space: nowrap;
+    }
+    .chip.good  { background: rgba(110,231,176,0.13); color: var(--positive); }
+    .chip.ok    { background: rgba(245,192,96,0.13);  color: var(--warning); }
+    .chip.watch { background: rgba(244,113,116,0.13); color: var(--negative); }
+
+    /* Beginner-mode switch in the header. */
+    .mode-toggle {
+      display: flex; align-items: center; gap: 7px;
+      background: var(--bg-1);
+      border: 1px solid var(--border);
+      color: var(--text-2);
+      font-size: 11px; font-weight: 600;
+      padding: 6px 11px; border-radius: 100px;
+      cursor: pointer; white-space: nowrap;
+      transition: all .15s;
+    }
+    .mode-toggle:hover { border-color: var(--accent); color: var(--text); }
+    .mode-toggle.on { border-color: var(--accent-dark); background: var(--accent-soft); color: var(--accent); }
+    .mode-track {
+      width: 24px; height: 13px; border-radius: 100px;
+      background: var(--border-strong); position: relative; flex-shrink: 0;
+      transition: background .15s;
+    }
+    .mode-toggle.on .mode-track { background: var(--accent); }
+    .mode-track::after {
+      content: ''; position: absolute; top: 2px; left: 2px;
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--text); transition: transform .15s;
+    }
+    .mode-toggle.on .mode-track::after { transform: translateX(11px); background: var(--bg-base); }
+
     /* ── "The bottom line" card ───────────────────────────────────────────── */
     .bottom-line {
       background: linear-gradient(160deg, var(--bg-cta), var(--bg-card) 65%);
@@ -1403,6 +1474,10 @@
     <button class="nav-btn" id="nav-trade"     onclick="showView('trade')">Trade Analyzer</button>
     <button class="nav-btn" id="nav-kalshi"    onclick="showView('kalshi')">Kalshi</button>
     <button class="nav-btn" id="nav-portfolio" onclick="showView('portfolio')">Portfolio</button>
+    <button class="mode-toggle" id="beginner-toggle" type="button" aria-pressed="false"
+            title="Swap finance jargon for plain English">
+      <span class="mode-track"></span><span>Explain it simply</span>
+    </button>
     <button class="watch-toggle" id="watch-toggle" type="button"><span class="watch-star">★</span> <span id="watch-count">0</span></button>
   </nav>
 
@@ -1506,12 +1581,12 @@
           <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-stock"></div><span class="card-label">Stock Data</span></div></div>
           <div class="card-body">
             <div class="stat-grid">
-              <div><div class="stat-lbl">Market Cap</div><div class="stat-val" id="d-mktcap">—</div></div>
-              <div><div class="stat-lbl">P/E Ratio</div><div class="stat-val" id="d-pe">—</div></div>
-              <div><div class="stat-lbl">52W High</div><div class="stat-val pos" id="d-high">—</div></div>
-              <div><div class="stat-lbl">52W Low</div><div class="stat-val neg" id="d-low">—</div></div>
-              <div><div class="stat-lbl">P/C Ratio</div><div class="stat-val" id="d-pcratio">—</div></div>
-              <div><div class="stat-lbl">Options Flow</div><div class="stat-val" id="d-optflow">—</div></div>
+              <div><div class="stat-lbl" data-term="market-cap"   data-jargon="Market Cap"></div><div class="stat-val" id="d-mktcap">—</div></div>
+              <div><div class="stat-lbl" data-term="pe-ratio"     data-jargon="P/E Ratio"></div><div class="stat-val" id="d-pe">—</div></div>
+              <div><div class="stat-lbl" data-term="52w-high"     data-jargon="52W High"></div><div class="stat-val pos" id="d-high">—</div></div>
+              <div><div class="stat-lbl" data-term="52w-low"      data-jargon="52W Low"></div><div class="stat-val neg" id="d-low">—</div></div>
+              <div><div class="stat-lbl" data-term="pc-ratio"     data-jargon="P/C Ratio"></div><div class="stat-val" id="d-pcratio">—</div></div>
+              <div><div class="stat-lbl" data-term="options-flow" data-jargon="Options Flow"></div><div class="stat-val" id="d-optflow">—</div></div>
             </div>
             <div class="chart-wrap"><canvas id="priceChart"></canvas></div>
           </div>
@@ -1523,7 +1598,7 @@
         </div>
 
         <div class="card">
-          <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-markets"></div><span class="card-label">Prediction Markets</span><span class="src-tag" id="d-mkt-src"></span></div></div>
+          <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot" id="dot-markets"></div><span class="card-label" data-term="prediction-markets" data-jargon="Prediction Markets"></span><span class="src-tag" id="d-mkt-src"></span></div></div>
           <div class="card-body" id="d-kalshi"><div class="mkt-empty">No data</div></div>
         </div>
       </div>
@@ -1534,7 +1609,7 @@
       </div>
 
       <div class="wide-card fade-in">
-        <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label">Event Probability</span></div></div>
+        <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label" data-term="event-probability" data-jargon="Event Probability"></span></div></div>
         <div class="prob-body">
           <div class="prob-gauge-col">
             <div class="prob-gauge-wrap"><canvas id="probGauge"></canvas><div class="prob-pct" id="d-prob-pct">—</div></div>
@@ -1543,14 +1618,14 @@
           </div>
           <div class="prob-detail-col">
             <table class="prob-table">
-              <tr><td>Options Flow</td>   <td class="pb-val" id="d-pb-options">—</td>  <td class="pb-wt">wt 35%</td></tr>
-              <tr><td>Market Odds</td>    <td class="pb-val" id="d-pb-market">—</td>   <td class="pb-wt">wt 30%</td></tr>
-              <tr><td>News Sentiment</td> <td class="pb-val" id="d-pb-news">—</td>     <td class="pb-wt">wt 20%</td></tr>
-              <tr><td>Price Momentum</td> <td class="pb-val" id="d-pb-momentum">—</td> <td class="pb-wt">wt 15%</td></tr>
+              <tr><td data-term="options-flow" data-jargon="Options Flow"></td>   <td class="pb-val" id="d-pb-options">—</td>  <td class="pb-wt">wt 35%</td></tr>
+              <tr><td data-term="prediction-markets" data-jargon="Market Odds"></td>    <td class="pb-val" id="d-pb-market">—</td>   <td class="pb-wt">wt 30%</td></tr>
+              <tr><td data-term="sentiment" data-jargon="News Sentiment"></td> <td class="pb-val" id="d-pb-news">—</td>     <td class="pb-wt">wt 20%</td></tr>
+              <tr><td data-term="price-momentum" data-jargon="Price Momentum"></td> <td class="pb-val" id="d-pb-momentum">—</td> <td class="pb-wt">wt 15%</td></tr>
               <tr class="pb-combined"><td>Combined</td><td class="pb-val" id="d-pb-combined">—</td><td class="pb-wt"></td></tr>
             </table>
             <div class="prob-targets">
-              <div class="targets-lbl">30-Day Price Range</div>
+              <div class="targets-lbl" data-term="price-range" data-jargon="30-Day Price Range"></div>
               <div class="targets-row">
                 <span class="target-bull" id="d-bull-target">$—</span><span class="targets-arrow">↑</span>
                 <span class="targets-sep">&nbsp;|&nbsp;</span><span class="targets-arrow">↓</span>
@@ -1563,7 +1638,7 @@
       </div>
 
       <div class="wide-card fade-in">
-        <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label">Market Sentiment</span></div></div>
+        <div class="card-hdr"><div class="card-hdr-left"><div class="card-dot live"></div><span class="card-label" data-term="sentiment" data-jargon="Market Sentiment"></span></div></div>
         <div class="sentiment-body">
           <div class="sent-score-big" id="d-sent-score" style="color:var(--text-3)">—</div>
           <div class="sent-right">
@@ -1898,6 +1973,201 @@ let chatHistory = [];
 
 const LS_WATCH = 'marketpulse:watchlist';
 const LS_PORT  = 'marketpulse:portfolio';
+const LS_BEGINNER = 'marketpulse:beginner';
+
+// ══════════════════════ PLAIN-ENGLISH GLOSSARY ══════════════════════
+// One entry per piece of jargon on the page.
+//   plain — the label shown in beginner mode (jargon is never the only wording)
+//   desc  — one-sentence explanation, no finance vocabulary allowed
+//   rate  — optional (value, stock) => {level, text}; drives the verdict chip.
+//           level is 'good' | 'ok' | 'watch'. Return null when the number can't
+//           be judged in isolation (a high P/E is fine for a fast grower).
+const GLOSSARY = {
+  'market-cap': {
+    plain: 'Company Size',
+    desc:  'What the whole company is worth if you bought every share. It is the simplest measure of how big the business is.',
+  },
+  'pe-ratio': {
+    plain: 'Price vs. Profit',
+    desc:  'How many years of the company’s current profit it would take to earn back the share price. Higher means investors are paying more today for each dollar the company earns, usually because they expect it to grow.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n) || n <= 0) return null;
+      if (n < 15) return { level: 'good',  text: 'Cheap' };
+      if (n < 30) return { level: 'ok',    text: 'Typical' };
+      if (n < 50) return { level: 'ok',    text: 'Pricey' };
+      return { level: 'watch', text: 'Very pricey' };
+    },
+  },
+  'pc-ratio': {
+    plain: 'Bet Balance',
+    desc:  'Compares traders betting the price will fall against traders betting it will rise. Below 1 means more people are betting it goes up.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n) || n <= 0) return null;
+      if (n < 0.7) return { level: 'good',  text: 'Optimistic' };
+      if (n <= 1.1) return { level: 'ok',   text: 'Balanced' };
+      return { level: 'watch', text: 'Cautious' };
+    },
+  },
+  'options-flow': {
+    plain: 'Trader Mood',
+    desc:  'Which way professional traders are leaning right now, based on the bets they are placing. It reflects short-term mood, not company quality.',
+  },
+  '52w-high': {
+    plain: 'Best Price This Year',
+    desc:  'The highest the share price has been in the last 12 months.',
+  },
+  '52w-low': {
+    plain: 'Worst Price This Year',
+    desc:  'The lowest the share price has been in the last 12 months.',
+  },
+  'day-range': {
+    plain: 'Today’s Swing',
+    desc:  'The lowest and highest the price has traded at today.',
+  },
+  'volume': {
+    plain: 'Shares Traded Today',
+    desc:  'How many shares changed hands today. Unusually high numbers mean something happened.',
+  },
+  'avg-volume': {
+    plain: 'Normal Daily Trading',
+    desc:  'How many shares usually change hands on a typical day. Compare it with today to spot unusual activity.',
+  },
+  'beta': {
+    plain: 'Bumpiness',
+    desc:  'How much this stock moves compared with the overall market. 1.0 means it moves in step; 2.0 means it swings twice as hard in both directions.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n)) return null;
+      if (n < 0.8) return { level: 'good',  text: 'Steadier' };
+      if (n <= 1.3) return { level: 'ok',   text: 'Market-like' };
+      return { level: 'watch', text: 'Bumpy' };
+    },
+  },
+  'eps': {
+    plain: 'Profit Per Share',
+    desc:  'How much profit the company earned for each share over the past year.',
+  },
+  'forward-pe': {
+    plain: 'Price vs. Expected Profit',
+    desc:  'Same idea as price vs. profit, but using what analysts think the company will earn next year instead of last year.',
+  },
+  'dividend-yield': {
+    plain: 'Cash Paid To Owners',
+    desc:  'The share of your investment paid back to you in cash each year, as a percentage. Many growing companies pay nothing and reinvest instead.',
+  },
+  'profit-margin': {
+    plain: 'Profit Kept',
+    desc:  'Out of every dollar of sales, how much the company keeps as profit after all costs. Higher means a more efficient business.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n)) return null;
+      if (n < 0)  return { level: 'watch', text: 'Losing money' };
+      if (n < 5)  return { level: 'watch', text: 'Thin' };
+      if (n < 15) return { level: 'ok',    text: 'Healthy' };
+      return { level: 'good', text: 'Very strong' };
+    },
+  },
+  'revenue-growth': {
+    plain: 'Sales Growth',
+    desc:  'How much faster the company is selling compared with the same period last year.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n)) return null;
+      if (n < 0)  return { level: 'watch', text: 'Shrinking' };
+      if (n < 5)  return { level: 'ok',    text: 'Slow' };
+      if (n < 20) return { level: 'good',  text: 'Growing' };
+      return { level: 'good', text: 'Fast growth' };
+    },
+  },
+  'earnings-growth': {
+    plain: 'Profit Growth',
+    desc:  'How much the company’s profit changed compared with the same period last year.',
+    rate: (v) => {
+      const n = parseFloat(v);
+      if (!isFinite(n)) return null;
+      if (n < 0)  return { level: 'watch', text: 'Falling' };
+      if (n < 10) return { level: 'ok',    text: 'Modest' };
+      return { level: 'good', text: 'Strong' };
+    },
+  },
+  'ma-50': {
+    plain: '50-Day Average',
+    desc:  'The average price over the last 50 trading days. Trading above it means the recent trend is upward.',
+  },
+  'ma-200': {
+    plain: '200-Day Average',
+    desc:  'The average price over the last 200 trading days — the long-term trend line. Above it is generally considered a healthy sign.',
+  },
+  'sector': {
+    plain: 'Industry Group',
+    desc:  'The broad slice of the economy this company belongs to, like technology or healthcare.',
+  },
+  'industry': {
+    plain: 'Specific Business',
+    desc:  'The narrower business the company competes in.',
+  },
+  'sentiment': {
+    plain: 'News Mood',
+    desc:  'A 0–100 read on how positive recent news coverage is. Low means fear in the headlines, high means excitement. It measures the mood, not the company’s quality.',
+  },
+  'event-probability': {
+    plain: 'Upward Momentum Score',
+    desc:  'Our blended 0–100 estimate of whether the recent upward push continues, combining trader bets, betting-market odds, news mood, and price trend. It is an estimate, not a prediction.',
+  },
+  'price-range': {
+    plain: 'Likely 30-Day Range',
+    desc:  'Where the price could plausibly land in a month, based on how much this stock has actually bounced around recently. Prices can and do go outside this range.',
+  },
+  'price-momentum': {
+    plain: 'Price Trend',
+    desc:  'Where today’s price sits between this year’s low and high. Near the top means the price has been climbing.',
+  },
+  'prediction-markets': {
+    plain: 'Real-Money Betting Odds',
+    desc:  'Odds from Kalshi, where people bet real money on business outcomes. The percentage is the crowd’s estimate that the outcome happens.',
+  },
+};
+
+let beginnerMode = localStorage.getItem(LS_BEGINNER) === '1';
+
+/** Label markup for a glossary term: dotted-underline word + hover explanation. */
+function termLabel(key, fallbackLabel) {
+  const g = GLOSSARY[key];
+  if (!g) return escHtml(fallbackLabel || key);
+  const shown = beginnerMode ? g.plain : (fallbackLabel || g.plain);
+  return `<span class="term" tabindex="0">${escHtml(shown)}`
+       + `<span class="tip"><strong>${escHtml(g.plain)}</strong>${escHtml(g.desc)}</span></span>`;
+}
+
+/** Verdict chip markup for a metric, or '' when the value can't be judged. */
+function termChip(key, rawValue, stock) {
+  const g = GLOSSARY[key];
+  if (!g || !g.rate || rawValue == null) return '';
+  let verdict = null;
+  try { verdict = g.rate(rawValue, stock || {}); } catch (_) { verdict = null; }
+  if (!verdict) return '';
+  return `<span class="chip ${verdict.level}">${escHtml(verdict.text)}</span>`;
+}
+
+/** Re-render the parts of the page whose wording depends on beginner mode. */
+function setBeginnerMode(on) {
+  beginnerMode = on;
+  localStorage.setItem(LS_BEGINNER, on ? '1' : '0');
+  const btn = document.getElementById('beginner-toggle');
+  if (btn) {
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+  document.querySelectorAll('[data-term]').forEach(el => {
+    el.innerHTML = termLabel(el.dataset.term, el.dataset.jargon);
+  });
+  if (lastAnalyzedData) {
+    renderFinancialDetails(lastAnalyzedData.stock);
+    renderStatGrid(lastAnalyzedData.stock);
+  }
+}
 
 // ══════════════════════ SPA VIEW SWITCHING ══════════════════════
 function showView(name) {
@@ -2197,11 +2467,7 @@ function populate(data) {
   const chEl = document.getElementById('d-change');
   chEl.textContent = `${sign}$${Math.abs(stock.change).toFixed(2)}  (${sign}${stock.change_pct.toFixed(2)}%)`;
   chEl.className = 't-change ' + dir;
-  document.getElementById('d-mktcap').textContent = stock.market_cap;
-  document.getElementById('d-pe').textContent = stock.pe_ratio ?? 'N/A';
-  document.getElementById('d-high').textContent = stock.week_52_high != null ? '$' + stock.week_52_high : 'N/A';
-  document.getElementById('d-low').textContent  = stock.week_52_low  != null ? '$' + stock.week_52_low  : 'N/A';
-  renderOptionsFlow(stock.options_flow);
+  renderStatGrid(stock);
   renderBottomLine(data.plain);
   if (cd && cd.prices && cd.prices.length) renderChart(cd, stock.change_pct >= 0);
   document.getElementById('d-earnings').innerHTML = formatEarnings(earnings || 'No data available.');
@@ -2215,28 +2481,42 @@ function populate(data) {
   ['dot-stock','dot-earnings','dot-markets'].forEach(id => document.getElementById(id).classList.add('live'));
 }
 
+/** Populate the six headline stats, each with an explainer and a verdict chip. */
+function renderStatGrid(s) {
+  const set = (id, html) => { document.getElementById(id).innerHTML = html; };
+  set('d-mktcap', escHtml(s.market_cap ?? 'N/A'));
+  set('d-pe', escHtml(String(s.pe_ratio ?? 'N/A')) + termChip('pe-ratio', s.pe_ratio, s));
+  set('d-high', s.week_52_high != null ? '$' + escHtml(String(s.week_52_high)) : 'N/A');
+  set('d-low',  s.week_52_low  != null ? '$' + escHtml(String(s.week_52_low))  : 'N/A');
+  renderOptionsFlow(s.options_flow);
+}
+
 function renderFinancialDetails(s) {
   const items = [];
-  function push(lbl, val, color) {
+  // `term` keys the glossary (label wording + hover text + verdict chip);
+  // `rateOn` is the raw number to judge, kept separate from the display string.
+  function push(term, lbl, val, color, rateOn) {
     if (val == null || val === '' || val === 'N/A') return;
-    items.push(`<div class="mini-item"><div class="mini-lbl">${escHtml(lbl)}</div><div class="mini-val"${color?` style="color:${color}"`:''}>${val}</div></div>`);
+    const chip = rateOn === undefined ? '' : termChip(term, rateOn, s);
+    items.push(`<div class="mini-item"><div class="mini-lbl">${termLabel(term, lbl)}</div>`
+             + `<div class="mini-val"${color?` style="color:${color}"`:''}>${val}${chip}</div></div>`);
   }
   const fmtNum = n => Number(n).toLocaleString('en-US', { maximumFractionDigits: 0 });
   const pnColor = v => v >= 0 ? 'var(--positive)' : 'var(--negative)';
-  if (s.day_high != null && s.day_low != null) push('Day Range', `$${s.day_low.toFixed(2)} – $${s.day_high.toFixed(2)}`);
-  if (s.volume != null)         push('Volume', fmtNum(s.volume));
-  if (s.avg_volume != null)     push('Avg Volume', fmtNum(s.avg_volume));
-  if (s.beta != null)           push('Beta', s.beta.toFixed(2));
-  if (s.eps != null)            push('EPS (TTM)', '$' + s.eps.toFixed(2));
-  if (s.forward_pe != null)     push('Forward P/E', s.forward_pe.toFixed(2));
-  if (s.dividend_yield != null) push('Dividend Yield', s.dividend_yield.toFixed(2) + '%');
-  if (s.profit_margin != null)  push('Profit Margin', s.profit_margin.toFixed(2) + '%', pnColor(s.profit_margin));
-  if (s.revenue_growth != null) push('Revenue Growth', (s.revenue_growth >= 0 ? '+' : '') + s.revenue_growth.toFixed(2) + '%', pnColor(s.revenue_growth));
-  if (s.earnings_growth != null) push('Earnings Growth', (s.earnings_growth >= 0 ? '+' : '') + s.earnings_growth.toFixed(2) + '%', pnColor(s.earnings_growth));
-  if (s.ma_50 != null)          push('50-Day MA', '$' + s.ma_50.toFixed(2), s.price > s.ma_50 ? 'var(--positive)' : 'var(--negative)');
-  if (s.ma_200 != null)         push('200-Day MA', '$' + s.ma_200.toFixed(2), s.price > s.ma_200 ? 'var(--positive)' : 'var(--negative)');
-  if (s.sector)                 push('Sector', s.sector);
-  if (s.industry)               push('Industry', s.industry);
+  if (s.day_high != null && s.day_low != null) push('day-range', 'Day Range', `$${s.day_low.toFixed(2)} – $${s.day_high.toFixed(2)}`);
+  if (s.volume != null)         push('volume', 'Volume', fmtNum(s.volume));
+  if (s.avg_volume != null)     push('avg-volume', 'Avg Volume', fmtNum(s.avg_volume));
+  if (s.beta != null)           push('beta', 'Beta', s.beta.toFixed(2), null, s.beta);
+  if (s.eps != null)            push('eps', 'EPS (TTM)', '$' + s.eps.toFixed(2));
+  if (s.forward_pe != null)     push('forward-pe', 'Forward P/E', s.forward_pe.toFixed(2));
+  if (s.dividend_yield != null) push('dividend-yield', 'Dividend Yield', s.dividend_yield.toFixed(2) + '%');
+  if (s.profit_margin != null)  push('profit-margin', 'Profit Margin', s.profit_margin.toFixed(2) + '%', pnColor(s.profit_margin), s.profit_margin);
+  if (s.revenue_growth != null) push('revenue-growth', 'Revenue Growth', (s.revenue_growth >= 0 ? '+' : '') + s.revenue_growth.toFixed(2) + '%', pnColor(s.revenue_growth), s.revenue_growth);
+  if (s.earnings_growth != null) push('earnings-growth', 'Earnings Growth', (s.earnings_growth >= 0 ? '+' : '') + s.earnings_growth.toFixed(2) + '%', pnColor(s.earnings_growth), s.earnings_growth);
+  if (s.ma_50 != null)          push('ma-50', '50-Day MA', '$' + s.ma_50.toFixed(2), s.price > s.ma_50 ? 'var(--positive)' : 'var(--negative)');
+  if (s.ma_200 != null)         push('ma-200', '200-Day MA', '$' + s.ma_200.toFixed(2), s.price > s.ma_200 ? 'var(--positive)' : 'var(--negative)');
+  if (s.sector)                 push('sector', 'Sector', escHtml(s.sector));
+  if (s.industry)               push('industry', 'Industry', escHtml(s.industry));
   const el = document.getElementById('fin-grid');
   el.innerHTML = items.length
     ? items.join('')
@@ -2320,7 +2600,8 @@ function renderGaugeChart(score, color) {
 function renderOptionsFlow(of) {
   const ratioEl = document.getElementById('d-pcratio'), flowEl = document.getElementById('d-optflow');
   if (!of) { ratioEl.textContent = 'N/A'; flowEl.textContent = 'N/A'; flowEl.style.color = ''; return; }
-  ratioEl.textContent = of.ratio; flowEl.textContent = of.sentiment;
+  ratioEl.innerHTML = escHtml(String(of.ratio)) + termChip('pc-ratio', of.ratio);
+  flowEl.textContent = of.sentiment;
   flowEl.style.color = { pos:'var(--positive)', neutral:'var(--warning)', neg:'var(--negative)' }[of.color] || '';
 }
 function sentimentMeta(score) {
@@ -2556,6 +2837,11 @@ document.getElementById('watch-toggle').addEventListener('click', e => {
   e.stopPropagation();
   document.getElementById('watch-pop').classList.toggle('open');
 });
+document.getElementById('beginner-toggle').addEventListener('click', () => {
+  setBeginnerMode(!beginnerMode);
+});
+// Paint the glossary labels once at startup, honouring the saved preference.
+setBeginnerMode(beginnerMode);
 
 // ══════════════════════ TICKER TAPE ══════════════════════
 async function refreshTape() {
